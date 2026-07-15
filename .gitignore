@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+target/
+.cache/
+
+# Build outputs
+dist/
+build/
+out/
+.next/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Signing keys — verifier authority keypairs, never commit
+backend/keys/
+*-keypair.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Rust
+**/*.rs.bk
+
+# Solana
+test-ledger/
+
+# Logs
+*.log
+logs/
+
+# Secrets
+*-keypair.json
+*.pem
+*.key
+backend/bin/
+dump.rdb

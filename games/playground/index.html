@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>GAMEE — Local Playground</title>
+  <style>
+    :root { color-scheme: dark; }
+    body {
+      margin: 0;
+      font-family: system-ui, sans-serif;
+      background: #0b0b12;
+      color: #e7e7ef;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      padding: 24px;
+      box-sizing: border-box;
+    }
+    h1 { font-size: 18px; letter-spacing: 0.08em; text-transform: uppercase; color: #a78bfa; margin: 0 0 4px; }
+    p.sub { color: #8b8ba0; font-size: 13px; margin: 0 0 20px; }
+    .controls {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    select, button, input[type=range] {
+      background: #1a1a26;
+      color: #e7e7ef;
+      border: 1px solid #33334a;
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 14px;
+    }
+    button { cursor: pointer; }
+    button:hover { border-color: #a78bfa; }
+    button:disabled { opacity: 0.4; cursor: default; }
+    .hud {
+      display: flex;
+      gap: 24px;
+      margin-bottom: 12px;
+      font-variant-numeric: tabular-nums;
+      font-size: 14px;
+    }
+    .hud b { color: #a78bfa; }
+    canvas {
+      background: #000;
+      border: 1px solid #33334a;
+      border-radius: 8px;
+      image-rendering: pixelated;
+    }
+    .status {
+      margin-top: 14px;
+      font-size: 15px;
+      min-height: 22px;
+    }
+    .status.won { color: #4ade80; }
+    .status.lost { color: #f87171; }
+    .hint { color: #6b6b80; font-size: 12px; margin-top: 8px; text-align: center; max-width: 420px; }
+  </style>
+</head>
+<body>
+  <h1>GAMEE Playground</h1>
+  <p class="sub">Runs the real deterministic game modules directly — no wallet, no backend, no ticket.</p>
+
+  <div class="controls">
+    <select id="game-select"></select>
+    <label>Level <input type="range" id="level" min="1" max="10" value="3" /> <span id="level-val">3</span></label>
+    <button id="restart">Restart</button>
+  </div>
+
+  <div class="hud">
+    <div>Score: <b id="score">0</b></div>
+    <div>Target: <b id="target">-</b></div>
+    <div>Frame: <b id="frame">0</b></div>
+  </div>
+
+  <canvas id="canvas" width="400" height="600"></canvas>
+
+  <div class="status" id="status"></div>
+  <div class="hint" id="hint"></div>
+
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>

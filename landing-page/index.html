@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GAMEE — Prove Your Skill. Win the Jackpot.</title>
+  <meta name="description" content="Pay $1, spin the wheel, play a skill game. Win real crypto jackpots on Solana. #Web3Gaming">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- NAV -->
+  <nav>
+    <div class="nav-inner">
+      <span class="logo">GAMEE</span>
+      <div class="nav-links">
+        <a href="#how">How It Works</a>
+        <a href="#games">Games</a>
+        <a href="#waitlist" class="btn-glow-small">Join Waitlist</a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero" id="hero">
+    <div class="hero-bg"></div>
+    <div class="container hero-content">
+      <div class="hero-text">
+        <div class="badge">⚡ Solana Skill-Gaming</div>
+        <h1>Prove Your Skill.<br><span class="gradient-text">Win the Jackpot.</span></h1>
+        <p class="hero-sub">
+          Pay $1. Spin the wheel. Play a skill-based arcade game.<br>
+          Beat the target score and the jackpot is yours — transparent, verifiable, instant payout on Solana.
+        </p>
+
+        <!-- JACKPOT DISPLAY -->
+        <div class="jackpot-display">
+          <div class="jackpot-label">Current Jackpot</div>
+          <div class="jackpot-amount">
+            <span class="sol-icon">◎</span>
+            <span id="jackpot-value">0</span>
+          </div>
+          <div class="jackpot-usd" id="jackpot-usd">$0</div>
+        </div>
+
+        <!-- SOCIAL PROOF STRIP -->
+        <div class="social-proof">
+          <div class="stat">
+            <span class="stat-value" id="players-online">0</span>
+            <span class="stat-label">Players Online</span>
+          </div>
+          <div class="stat">
+            <span class="stat-value" id="today-plays">0</span>
+            <span class="stat-label">Today's Plays</span>
+          </div>
+          <div class="stat">
+            <span class="stat-value" id="total-winners">0</span>
+            <span class="stat-label">Total Winners</span>
+          </div>
+        </div>
+
+        <div class="hero-cta">
+          <a href="#waitlist" class="btn-glow">🎮 Join the Waitlist</a>
+          <a href="#how" class="btn-outline">How It Works ↓</a>
+        </div>
+      </div>
+
+      <!-- WHEEL SECTION -->
+      <div class="hero-wheel">
+        <div class="wheel-container">
+          <div class="wheel-pointer">▼</div>
+          <canvas id="wheelCanvas" width="320" height="320"></canvas>
+          <button class="btn-spin" id="spinBtn">▶ SPIN</button>
+        </div>
+        <div class="wheel-result" id="wheel-result">
+          <span class="result-label">Spin to discover your game!</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- RECENT WINNER TICKER -->
+    <div class="winner-ticker">
+      <div class="ticker-inner" id="ticker">
+        <span class="ticker-item">🟢 flappy_sam won ◎14.8 — 2 min ago</span>
+        <span class="ticker-item">🟢 crypto_runner88 won ◎23.1 — 7 min ago</span>
+        <span class="ticker-item">🟢 moon_monkey won ◎9.5 — 15 min ago</span>
+        <span class="ticker-item">🟢 sol_wizard42 won ◎31.2 — 22 min ago</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS -->
+  <section class="section" id="how">
+    <div class="container">
+      <h2>How It Works</h2>
+      <div class="steps">
+        <div class="step">
+          <div class="step-num">1</div>
+          <h3>Connect & Pay</h3>
+          <p>Connect your Phantom wallet. Pay $1 USDC — 80% goes to the jackpot pool, transparent on-chain.</p>
+        </div>
+        <div class="step">
+          <div class="step-num">2</div>
+          <h3>Spin the Wheel</h3>
+          <p>A verifiable random game picks your challenge. Easy games are common. Legendary games are rare — and pay big.</p>
+        </div>
+        <div class="step">
+          <div class="step-num">3</div>
+          <h3>Play & Win</h3>
+          <p>Beat the target score through pure skill. Your every input is verified server-side. No bots, no cheats.</p>
+        </div>
+        <div class="step">
+          <div class="step-num">4</div>
+          <h3>Instant Payout</h3>
+          <p>Win the round? USDC lands in your wallet in seconds. 95% to you, 5% seeds the next jackpot. It never hits zero.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- GAMES SHOWCASE -->
+  <section class="section section-dark" id="games">
+    <div class="container">
+      <h2>Featured Games</h2>
+      <p class="section-sub">From precision to puzzles — 40+ games. New ones added every week.</p>
+      <div class="game-grid">
+        <div class="game-card"><div class="game-icon">🐦</div><h4>Wing Rush</h4><span class="game-diff easy">Easy</span></div>
+        <div class="game-card"><div class="game-icon">🏃</div><h4>Dino Sprint</h4><span class="game-diff easy">Easy</span></div>
+        <div class="game-card"><div class="game-icon">🧩</div><h4>Block Merge</h4><span class="game-diff medium">Medium</span></div>
+        <div class="game-card"><div class="game-icon">🧠</div><h4>Simon Pro</h4><span class="game-diff medium">Medium</span></div>
+        <div class="game-card"><div class="game-icon">🎯</div><h4>Aim Master</h4><span class="game-diff medium">Medium</span></div>
+        <div class="game-card"><div class="game-icon">↕️</div><h4>Perfect Stack</h4><span class="game-diff easy">Easy</span></div>
+        <div class="game-card"><div class="game-icon">🌀</div><h4>Helix Drop</h4><span class="game-diff hard">Hard</span></div>
+        <div class="game-card"><div class="game-icon">💣</div><h4>Minefield</h4><span class="game-diff hard">Hard</span></div>
+        <div class="game-card legendary"><div class="game-icon">👑</div><h4>Legend Run</h4><span class="game-diff legend">Legendary</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- WAITLIST -->
+  <section class="section waitlist" id="waitlist">
+    <div class="container">
+      <div class="waitlist-box">
+        <h2>Get Early Access</h2>
+        <p>Be first to play when we launch. Early users get priority access, exclusive badges, and bonus spins.</p>
+        <form id="waitlist-form" class="waitlist-form">
+          <div class="form-group">
+            <input type="email" id="email" placeholder="Your email address" required>
+          </div>
+          <div class="form-group">
+            <input type="text" id="wallet" placeholder="Solana wallet address (optional)">
+          </div>
+          <button type="submit" class="btn-glow btn-submit">🚀 Join the Waitlist</button>
+        </form>
+        <p class="form-note" id="form-note">No spam. We'll only email you when we launch.</p>
+        <div class="counter-box">
+          <span id="waitlist-count">0</span> people on the waitlist
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer>
+    <div class="container">
+      <div class="footer-inner">
+        <div class="footer-brand">
+          <span class="logo">GAMEE</span>
+          <p>Web3 Skill-Gaming Jackpot Platform on Solana.</p>
+          <p class="footer-legal">Skill contest. Not gambling. Outcomes determined by player skill.</p>
+        </div>
+        <div class="footer-links">
+          <a href="#">Twitter / X</a>
+          <a href="#">Discord</a>
+          <a href="#">Telegram</a>
+          <a href="#">Docs</a>
+        </div>
+      </div>
+      <div class="footer-bottom">
+        &copy; 2025 GAMEE. All rights reserved. Still building.
+      </div>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>

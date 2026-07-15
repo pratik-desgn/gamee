@@ -1,0 +1,14 @@
+{
+  "name": "gamee-scripts",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "sim": "npx ts-node economy-sim/simulate.ts",
+    "sim:1m": "npx ts-node economy-sim/simulate.ts --plays 10000 --days 100",
+    "sim:10m": "npx ts-node economy-sim/simulate.ts --plays 100000 --days 100"
+  },
+  "dependencies": {
+    "ts-node": "^10.9.0",
+    "typescript": "^5.6.0"
+  }
+}

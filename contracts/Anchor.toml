@@ -1,0 +1,25 @@
+[toolchain]
+anchor_version = "0.30.1"
+solana_version = "1.18.26"
+
+[provider]
+# localnet: `anchor test` spins up a throwaway solana-test-validator, deploys
+# the program, funds the provider wallet at genesis, runs tests, tears down.
+# No real SOL, no devnet airdrop rate limits — this is what CI and local dev
+# should use. For an actual devnet deploy, pass --provider.cluster devnet
+# explicitly (`anchor deploy --provider.cluster devnet`), which will use the
+# [programs.devnet] mapping below.
+cluster = "localnet"
+wallet = "~/.config/solana/id.json"
+
+[programs.localnet]
+gamee = "9ZjYdP5QQB6SHbQWRocLDtuxga519Z4ZQsVct1ESkJYa"
+
+[programs.devnet]
+gamee = "9ZjYdP5QQB6SHbQWRocLDtuxga519Z4ZQsVct1ESkJYa"
+
+[scripts]
+test = "npx ts-mocha -p ./tsconfig.json -t 1000000 tests/gamee.ts"
+# One-time platform setup after `anchor deploy` — idempotent, see the header
+# of scripts/initialize.ts for env overrides (USDC_MINT, VERIFIER_PUBKEY, …).
+init = "npx ts-node --transpile-only scripts/initialize.ts"

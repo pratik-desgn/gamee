@@ -1,0 +1,259 @@
+name: Gamee CI/CD
+
+on:
+  push:
+    branches: [main, staging, dev]
+  pull_request:
+    branches: [main, staging]
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: rustfmt, clippy
+
+      - name: Lint Rust contracts
+        run: |
+          cd contracts
+          cargo fmt --check --manifest-path programs/gamee/Cargo.toml
+          cargo clippy --manifest-path programs/gamee/Cargo.toml -- -D warnings
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache-dependency-path: backend/go.sum
+
+      - name: Build & vet Go backend
+        run: |
+          cd backend
+          go build ./...
+          go vet ./...
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Typecheck TypeScript games
+        run: |
+          cd games
+          npm ci
+          npx tsc --noEmit
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: gamee_test
+          POSTGRES_USER: gamee
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+          cache-dependency-path: backend/go.sum
+
+      - name: Go backend tests
+        run: |
+          cd backend
+          go test -v -race -count=1 ./...
+        env:
+          DATABASE_URL: postgres://gamee:test@localhost:5432/gamee_test?sslmode=disable
+          REDIS_URL: redis://localhost:6379/0
+          JWT_SECRET: test-secret
+          SOLANA_RPC_URL: https://api.devnet.solana.com
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Game SDK tests
+        run: |
+          cd games
+          npm ci
+          npm test -- --coverage
+
+  # Separate job so a still-unproven Anchor toolchain install (from-source
+  # build, ~20-30 min cold) can't block the Go/Games tests or the Docker
+  # build above — its pass/fail is its own visible CI check instead.
+  anchor-test:
+    name: Anchor Tests (Solana)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Installed directly via Anza's official install script rather than a
+      # third-party action — nicklason/setup-solana, previously used here,
+      # was deleted/renamed and broke this job outright ("repository not
+      # found"), which a maintained first-party script isn't subject to.
+      - name: Install Solana CLI
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/v1.18.26/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+
+      # avm builds anchor-cli from source (~20-30 min on a cold cache).
+      # Cache the compiled binary keyed on the pinned version so only the
+      # first run on a given anchor_version pays that cost.
+      #
+      # Cache all of ~/.avm — the real binaries live in ~/.avm/bin (the
+      # `anchor` on PATH is a symlink to the avm multiplexer, which needs
+      # ~/.avm/.version to dispatch), so the old cache of just
+      # ~/.cargo/bin/anchor restored a dangling symlink ("anchor: command
+      # not found", runs 28834412934/28834557951). The -v2 key evicts that
+      # poisoned entry.
+      - name: Cache anchor-cli binary
+        id: cache-anchor
+        uses: actions/cache@v4
+        with:
+          path: ~/.avm
+          key: anchor-cli-0.30.1-${{ runner.os }}-v2
+
+      - name: Install Anchor
+        if: steps.cache-anchor.outputs.cache-hit != 'true'
+        timeout-minutes: 40
+        run: |
+          cargo install --git https://github.com/coral-xyz/anchor avm --locked
+          avm install 0.30.1
+          avm use 0.30.1
+
+      - name: Add anchor to PATH
+        run: echo "$HOME/.avm/bin" >> "$GITHUB_PATH"
+
+      - name: Generate local wallet keypair
+        run: solana-keygen new --no-bip39-passphrase --silent --outfile ~/.config/solana/id.json
+
+      - name: Install contract test dependencies
+        run: |
+          cd contracts
+          npm install
+
+      - name: Run Anchor tests
+        # cluster = "localnet" (see contracts/Anchor.toml): this starts a
+        # throwaway solana-test-validator, deploys the program fresh, and
+        # funds the provider wallet at genesis — no --skip-deploy, since
+        # nothing is deployed yet on a brand-new validator.
+        #
+        # RUSTUP_TOOLCHAIN: anchor-cli 0.30.1's IDL generation hardcodes
+        # `cargo +nightly test --features idl-build` (idl/src/build.rs),
+        # which ignores rust-toolchain.toml — env is the only override it
+        # honors. It must be a nightly (the procmacro2_semver_exempt path
+        # needs nightly-only proc-macro2 impls) from before ~2025-03, when
+        # rustc removed proc_macro::SourceFile that the locked
+        # proc-macro2 1.0.86 (required by anchor-syn 0.30.1) still uses.
+        # Verified locally 2026-07-07: full `anchor test` passes (15/15)
+        # under nightly-2025-01-01. Goes away if/when we upgrade to
+        # Anchor 0.31+, whose IDL build no longer needs nightly.
+        env:
+          RUSTUP_TOOLCHAIN: nightly-2025-01-01
+        run: |
+          rustup toolchain install nightly-2025-01-01 --profile minimal
+          cd contracts
+          anchor test
+
+      - name: Frontend IDL copy is in sync
+        # The frontend builds buy_ticket from its committed IDL snapshot
+        # (frontend/src/idl/gamee.json). If a contract change regenerates the
+        # IDL, `npm run sync-idl --prefix frontend` must be committed with it.
+        run: |
+          diff -u frontend/src/idl/gamee.json contracts/target/idl/gamee.json
+          diff -u frontend/src/idl/gamee.ts contracts/target/types/gamee.ts
+
+  build:
+    name: Build & Push
+    needs: [lint, test]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/staging'
+    # GITHUB_TOKEN defaults to read-only package access on new repos; without
+    # this, pushing to ghcr.io fails with "installation not allowed to Create
+    # organization package" even though nothing else is wrong.
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push API gateway
+        uses: docker/build-push-action@v5
+        with:
+          # Repo root context: the image bundles the compiled games/sdk
+          # replay verifier alongside the Go binary (see backend/Dockerfile).
+          context: .
+          file: backend/Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository }}/api:${{ github.sha }},ghcr.io/${{ github.repository }}/api:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & push frontend
+        uses: docker/build-push-action@v5
+        with:
+          # Repo root context: the image bundles the compiled games SDK so
+          # /play can run the real games client-side (see frontend/Dockerfile).
+          context: .
+          file: frontend/Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository }}/frontend:${{ github.sha }},ghcr.io/${{ github.repository }}/frontend:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy-staging:
+    name: Deploy Staging
+    needs: [build]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/staging'
+    steps:
+      - name: Deploy to staging
+        run: |
+          echo "Deploying to staging environment..."
+          # Add your deploy command here (SSH, kubectl, flyctl, etc.)
+
+  deploy-production:
+    name: Deploy Production
+    needs: [build]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Deploy to production
+        run: |
+          echo "Deploying to production environment..."
+          # Add your deploy command here

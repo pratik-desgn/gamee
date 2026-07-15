@@ -1,0 +1,145 @@
+version: "3.9"
+
+services:
+  # ─── Reverse Proxy ───
+  traefik:
+    image: traefik:v3.1
+    command:
+      - "--api.insecure=false"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.email=admin@gamee.io"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "letsencrypt:/letsencrypt"
+    restart: unless-stopped
+
+  # ─── Database ───
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: gamee
+      POSTGRES_USER: gamee
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-gamee_dev_pass}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gamee"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # ─── Backend API Gateway ───
+  api-gateway:
+    build:
+      # Context is the repo root (not ./backend): the image also bundles the
+      # compiled games/sdk replay verifier, which lives outside backend/.
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: 8080
+      DATABASE_URL: "postgres://gamee:${DB_PASSWORD:-gamee_dev_pass}@postgres:5432/gamee?sslmode=disable"
+      REDIS_URL: "redis://redis:6379/0"
+      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-in-production}
+      SOLANA_RPC_URL: ${SOLANA_RPC_URL:-https://api.devnet.solana.com}
+      PROGRAM_ID: ${PROGRAM_ID:-}
+      USDC_MINT: ${USDC_MINT:-EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v}
+      VAULT_ADDRESS: ${VAULT_ADDRESS:-}
+      VERIFIER_KEY_PATH: /run/secrets/verifier_key
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      REPLAY_WORKERS: ${REPLAY_WORKERS:-4}
+      TICK_RATE: ${TICK_RATE:-60}
+      MAX_PLAYERS: ${MAX_PLAYERS:-10000}
+      RATE_LIMIT_PER_SECOND: ${RATE_LIMIT_PER_SECOND:-10}
+      RATE_LIMIT_BURST: ${RATE_LIMIT_BURST:-20}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    secrets:
+      - verifier_key
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.api.loadbalancer.server.port=8080"
+      - "traefik.http.routers.api.rule=Host(`api.gamee.io`)"
+    restart: unless-stopped
+
+  # ─── Frontend ───
+  frontend:
+    build:
+      # Repo root context: the image bundles the compiled games SDK so
+      # /play can run the real games client-side (see frontend/Dockerfile).
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080}
+      NEXT_PUBLIC_SOLANA_RPC: ${NEXT_PUBLIC_SOLANA_RPC:-https://api.devnet.solana.com}
+      NEXT_PUBLIC_GAMEE_PROGRAM_ID: ${NEXT_PUBLIC_GAMEE_PROGRAM_ID:-}
+      NEXT_PUBLIC_USDC_MINT: ${NEXT_PUBLIC_USDC_MINT:-EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v}
+    depends_on:
+      - api-gateway
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.frontend.loadbalancer.server.port=3000"
+      - "traefik.http.routers.frontend.rule=Host(`gamee.io`)"
+    restart: unless-stopped
+
+  # ─── Monitoring ───
+  prometheus:
+    image: prom/prometheus:v2.53
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./scripts/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.1
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+secrets:
+  verifier_key:
+    file: ./secrets/verifier-keypair.json
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+  letsencrypt:

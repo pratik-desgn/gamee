@@ -1,0 +1,26 @@
+[workspace]
+members = ["programs/gamee"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+description = "GAMEE — On-chain ticket, spin, and jackpot program"
+edition = "2021"
+# Matches the Rust version bundled with Solana 1.18.26's platform-tools
+# (what cargo-build-sbf and anchor test actually build/run with). Declaring
+# it lets a newer local cargo's MSRV-aware resolver avoid selecting
+# transitive dependency versions that require a newer edition/toolchain
+# than 1.75 can parse — without this, `cargo generate-lockfile`/`update`
+# happily picks the crates.io-latest patch release of leaf crates like
+# zeroize_derive or toml_parser, which have since bumped to edition2024,
+# and the old cargo bundled with Solana's toolchain fails outright trying
+# to even parse their manifest (not just build them).
+rust-version = "1.75"
+
+# Anchor requires this for on-chain programs — release builds otherwise
+# silently wrap on integer overflow instead of aborting. Every arithmetic
+# path in this contract already uses checked_add/checked_mul/etc. as a
+# second layer of defense, but this is the release-profile-wide backstop
+# `anchor build`/`anchor test` enforce and refuse to build without.
+[profile.release]
+overflow-checks = true
