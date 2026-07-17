@@ -2,14 +2,13 @@ package anticheat
 
 import (
 	"math"
-	"time"
 )
 
 // InputEvent represents a single recorded input for analysis.
 type InputEvent struct {
-	Frame int           `json:"frame"`
-	Type  string        `json:"type"`
-	Time  time.Duration `json:"time"` // ms from session start
+	Frame int     `json:"frame"`
+	Type  string  `json:"type"`
+	Time  float64 `json:"time"` // client wall-clock ms (epoch or session-relative — only diffs are used)
 }
 
 // SessionAnalysis contains the results of anti-cheat checks.
@@ -98,21 +97,38 @@ func AnalyzeInputTiming(inputs []InputEvent) *SessionAnalysis {
 			}
 		}
 	}
-	frameIntervals := make([]float64, 0, len(intervals))
-	for _, iv := range intervals {
-		frameIntervals = append(frameIntervals, math.Mod(iv, 16.667))
+	// Frame-grid alignment of the client's WALL-CLOCK timestamps. The
+	// `intervals` above are derived from frame numbers, so they are exact
+	// frame multiples by definition — checking THEM against the grid was
+	// vacuous and flagged 100% of inputs on every session, human or bot,
+	// which silently walked every wallet up the escalation ladder into
+	// hardened (+3) difficulty. What actually distinguishes a fabricated
+	// log is the recorded wall time: a script typically writes
+	// time = frame * 16.667, landing every interval exactly on the frame
+	// grid, while a real client stamps Date.now()/performance.now(), whose
+	// diffs drift off the grid within a few frames. Missing/zero time
+	// fields produce no wall intervals and skip the check.
+	wallIntervals := make([]float64, 0, len(inputs)-1)
+	for i := 1; i < len(inputs); i++ {
+		if d := inputs[i].Time - inputs[i-1].Time; d > 0 {
+			wallIntervals = append(wallIntervals, d)
+		}
 	}
 	exactFrameCount := 0
-	for _, fi := range frameIntervals {
-		if fi < 0.1 || (16.667-fi) < 0.1 {
+	for _, iv := range wallIntervals {
+		m := math.Mod(iv, 16.667)
+		if m < 0.1 || (16.667-m) < 0.1 {
 			exactFrameCount++
 		}
 	}
-	exactFramePct := float64(exactFrameCount) / float64(len(frameIntervals))
-	if exactFramePct > 0.8 && len(frameIntervals) >= 5 {
+	exactFramePct := 0.0
+	if len(wallIntervals) > 0 {
+		exactFramePct = float64(exactFrameCount) / float64(len(wallIntervals))
+	}
+	if exactFramePct > 0.8 && len(wallIntervals) >= 5 {
 		analysis.Flags = append(analysis.Flags, CheatFlag{
 			Rule: "frame_perfect_inputs", Severity: "medium",
-			Value: exactFramePct, Reason: "Inputs land on frame boundaries (scripted)",
+			Value: exactFramePct, Reason: "Wall-clock input times land on frame boundaries (scripted log)",
 		})
 	}
 
@@ -127,7 +143,7 @@ func AnalyzeInputTiming(inputs []InputEvent) *SessionAnalysis {
 	} else if sub100Pct > 0.2 {
 		botScore += 0.2
 	}
-	if exactFramePct > 0.8 {
+	if exactFramePct > 0.8 && len(wallIntervals) >= 5 {
 		botScore += 0.2
 	}
 	analysis.BotLikelyhood = math.Min(botScore, 1.0)

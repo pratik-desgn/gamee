@@ -75,7 +75,15 @@ function countInversions(grid: number[][]): number {
 /**
  * Check if a puzzle state is solvable.
  * For odd grid sizes: inversions must be even.
- * For even grid sizes: (inversions + row of empty from bottom) must be even.
+ * For even grid sizes: (inversions + row of empty from bottom, 1-based)
+ * must be ODD — the solved state itself is the proof: 0 inversions, empty
+ * on the bottom row (1 from bottom), sum 1. This branch previously
+ * required the sum to be EVEN, which inverted the test for every
+ * even-width grid: legally-shuffled boards (always solvable, sum odd)
+ * "failed" it, so generateSolvablePuzzle's repair swap then made every
+ * generated 4×4 puzzle genuinely unsolvable — no level that produced a
+ * 4×4 board (levels ~4–7, including the production base difficulty) could
+ * ever be won.
  */
 function isSolvable(grid: number[][]): boolean {
   const size = grid.length;
@@ -94,7 +102,7 @@ function isSolvable(grid: number[][]): boolean {
         }
       }
     }
-    return (inversions + emptyRowFromBottom) % 2 === 0;
+    return (inversions + emptyRowFromBottom) % 2 === 1;
   }
 }
 

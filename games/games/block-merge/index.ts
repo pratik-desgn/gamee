@@ -44,9 +44,20 @@ function difficultyFromParams(diff: DifficultyParams): BlockMergeDifficulty {
   // becoming completely full with zero legal merges (rare — a 2048-style
   // board can absorb hundreds of moves before that happens), so a session
   // that wasn't heading anywhere could run for the full 10-minute idle cap
-  // before ever resolving as a loss. 120/220/350 are generous-but-real
-  // budgets for reaching 512/1024/2048 on a 4-6 grid with efficient play.
-  const maxMoves = targetScore <= 512 ? 120 : targetScore <= 1024 ? 220 : 350;
+  // before ever resolving as a loss.
+  //
+  // The budget must clear the value-conservation floor: every move spawns
+  // exactly one tile worth at most 4, so after m moves the total value on
+  // the board is at most 4*(startTiles + m) — the original 120/220/350
+  // budgets capped total board value at 488/892/1416, strictly below their
+  // own 512/1024/2048 targets, making every level provably unwinnable by
+  // any player. With the realistic spawn mix (90% twos, expected 2.2/move)
+  // the practical floor is target/2.2 moves (~233/466/931); budgets sit
+  // ~40% above that so efficient play wins with real margin (a strong
+  // search bot at a 1.24× budget still ran out of moves at the 1024 tile
+  // half the time) while aimless play still resolves as a loss well
+  // inside the 10-minute frame cap.
+  const maxMoves = targetScore <= 512 ? 330 : targetScore <= 1024 ? 650 : 1300;
 
   const d = diff.params;
   return {

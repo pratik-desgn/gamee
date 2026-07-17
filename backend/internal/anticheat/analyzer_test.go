@@ -2,7 +2,6 @@ package anticheat
 
 import (
 	"testing"
-	"time"
 )
 
 func TestAnalyzeInputTiming_EmptyInputs(t *testing.T) {
@@ -33,18 +32,20 @@ func TestAnalyzeInputTiming_NormalHumanInputs(t *testing.T) {
 	// Simulate human-like reaction with jitter: 200-500ms between inputs,
 	// varying intervals so metronomic timing doesn't trigger
 	inputs := make([]InputEvent, 15)
-	frames := []int{14, 28, 44, 58, 76, 90, 108, 124, 140, 158, 174, 192, 208, 226, 242}
+	frames := []int{14, 36, 52, 80, 95, 120, 139, 170, 187, 211, 231, 258, 274, 303, 319}
 	for i := 0; i < 15; i++ {
 		inputs[i] = InputEvent{
 			Frame: frames[i],
 			Type:  "tap",
-			Time:  time.Duration(frames[i]*16) * time.Millisecond,
+			Time:  float64(1_700_000_000_000 + frames[i]*17 + i*3), // integer epoch ms, off the frame grid
 		}
 	}
 	analysis := AnalyzeInputTiming(inputs)
-	// Human with 200-400ms variable reactions should not be banned
-	if analysis.RecommendAction == "ban" {
-		t.Errorf("human-like inputs should not be banned, got bot=%0.2f action=%s",
+	// Human with 200-400ms variable reactions should pass outright — a
+	// pattern like this used to accrue a "flag" every session via the
+	// vacuous frame-grid check, silently escalating every wallet.
+	if analysis.RecommendAction != "pass" {
+		t.Errorf("human-like inputs should pass, got bot=%0.2f action=%s",
 			analysis.BotLikelyhood, analysis.RecommendAction)
 	}
 }
@@ -56,7 +57,7 @@ func TestAnalyzeInputTiming_Sub100msReactions(t *testing.T) {
 		inputs[i] = InputEvent{
 			Frame: i*3 + 1, // ~50ms apart at 60fps
 			Type:  "tap",
-			Time:  time.Duration(i*50) * time.Millisecond,
+			Time:  float64(i * 51),
 		}
 	}
 	analysis := AnalyzeInputTiming(inputs)
@@ -72,7 +73,7 @@ func TestAnalyzeInputTiming_MetronomicTiming(t *testing.T) {
 		inputs[i] = InputEvent{
 			Frame: i + 1, // exactly 1 frame apart every time
 			Type:  "tap",
-			Time:  time.Duration(i*16) * time.Millisecond,
+			Time:  float64(i * 16),
 		}
 	}
 	analysis := AnalyzeInputTiming(inputs)
@@ -89,7 +90,7 @@ func TestAnalyzeInputTiming_HighInputRate(t *testing.T) {
 		inputs[i] = InputEvent{
 			Frame: i / 2, // 2 inputs per frame = 120 inputs/sec
 			Type:  "tap",
-			Time:  time.Duration(i*8) * time.Millisecond,
+			Time:  float64(i * 8),
 		}
 	}
 	analysis := AnalyzeInputTiming(inputs)
@@ -105,7 +106,7 @@ func TestAnalyzeInputTiming_FlagCount(t *testing.T) {
 		inputs[i] = InputEvent{
 			Frame: i + 1, // exactly 1 frame apart
 			Type:  "tap",
-			Time:  time.Duration(i*16) * time.Millisecond,
+			Time:  float64(i) * 16.667, // fabricated: wall time exactly on the frame grid
 		}
 	}
 	analysis := AnalyzeInputTiming(inputs)
@@ -139,21 +140,23 @@ func TestShouldReject(t *testing.T) {
 }
 
 func TestAnalyzeInputTiming_CompositeFlagFallback(t *testing.T) {
-	// The exact-frame-boundary botScore signal (+0.2, no length gate) fires
-	// on any input here — intervals are always integer-frame multiples of
-	// 16.667ms by construction, since that's what a deterministic 60fps replay
-	// actually produces. The explicit "frame_perfect_inputs" Flags rule only
-	// records that when len(frameIntervals) >= 5; with just 4 intervals (5
-	// inputs) below, botScore still gets the +0.2 but Flags would be empty
-	// without the composite fallback. Large varied gaps keep stddev/sub-100ms
-	// from contributing so this exercises the frame-boundary signal in isolation.
-	frameGaps := []int{20, 25, 15, 30}
+	// botScore can cross the "flag" line on partial credit without any
+	// specific rule recording a Flags row: here 4 near-identical intervals
+	// give the stddev<20ms +0.4, but the metronomic_timing Flags rule
+	// needs >=10 intervals so it stays silent. Without the composite
+	// fallback these sessions would carry a non-"pass" action with zero
+	// flag rows to act on. Wall times carry human-like jitter so the
+	// (fixed) frame-grid rule contributes nothing.
+	frameGaps := []int{20, 20, 21, 20}
+	wallJitter := []float64{337, 331, 356, 334}
 	frame := 0
+	wall := 1_700_000_000_000.0
 	inputs := make([]InputEvent, 0, len(frameGaps)+1)
-	inputs = append(inputs, InputEvent{Frame: frame, Type: "tap"})
-	for _, g := range frameGaps {
+	inputs = append(inputs, InputEvent{Frame: frame, Type: "tap", Time: wall})
+	for i, g := range frameGaps {
 		frame += g
-		inputs = append(inputs, InputEvent{Frame: frame, Type: "tap"})
+		wall += wallJitter[i]
+		inputs = append(inputs, InputEvent{Frame: frame, Type: "tap", Time: wall})
 	}
 	analysis := AnalyzeInputTiming(inputs)
 	if analysis.RecommendAction == "pass" {
@@ -164,6 +167,33 @@ func TestAnalyzeInputTiming_CompositeFlagFallback(t *testing.T) {
 	}
 	if analysis.Flags[0].Rule != "composite_bot_score" {
 		t.Errorf("expected composite_bot_score fallback rule, got %q", analysis.Flags[0].Rule)
+	}
+}
+
+func TestAnalyzeInputTiming_FrameGridWallTimes(t *testing.T) {
+	// A fabricated log that stamps time = frame * 16.667 exactly must trip
+	// frame_perfect_inputs; the same frames with integer-ms human wall
+	// clocks must not.
+	frames := []int{14, 28, 44, 58, 76, 90, 108}
+	fabricated := make([]InputEvent, len(frames))
+	human := make([]InputEvent, len(frames))
+	for i, f := range frames {
+		fabricated[i] = InputEvent{Frame: f, Type: "tap", Time: float64(f) * 16.667}
+		human[i] = InputEvent{Frame: f, Type: "tap", Time: float64(1_700_000_000_000 + f*17 + i*5)}
+	}
+	hasRule := func(a *SessionAnalysis, rule string) bool {
+		for _, fl := range a.Flags {
+			if fl.Rule == rule {
+				return true
+			}
+		}
+		return false
+	}
+	if a := AnalyzeInputTiming(fabricated); !hasRule(a, "frame_perfect_inputs") {
+		t.Errorf("grid-stamped wall times should flag frame_perfect_inputs, flags=%v", a.Flags)
+	}
+	if a := AnalyzeInputTiming(human); hasRule(a, "frame_perfect_inputs") {
+		t.Errorf("integer-ms wall times should not flag frame_perfect_inputs, flags=%v", a.Flags)
 	}
 }
 

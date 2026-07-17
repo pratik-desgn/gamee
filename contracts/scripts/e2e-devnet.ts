@@ -11,9 +11,10 @@
  *   → on win: settle_session pays 95% of the jackpot vault on devnet
  *
  * Prereqs: backend running on :8080 (devnet env), program deployed+initialized,
- * player keypair funded with SOL + test USDC. Bots exist for aim-master,
- * minefield, reaction-test, simon-pro (16/50 wheel weight); unsupported spins
- * consume the ticket and the script buys another (up to MAX_TICKETS).
+ * player keypair funded with SOL + test USDC. Bots exist for all 10 games
+ * (e2e-bots.ts — verified via bots-offline-check.ts), so every spin is
+ * playable; a lost round consumes the ticket and the script buys another
+ * (up to MAX_TICKETS).
  *
  * Env (defaults = 2026-07-07 devnet deployment):
  *   API_BASE, PLAYER_KEYPAIR, VERIFIER_KEYPAIR, and the address set below.
@@ -65,92 +66,11 @@ async function withRetry<T>(label: string, fn: () => Promise<T>, tries = 4): Pro
   }
 }
 
-// ── humanlike bot harness ──────────────────────────────────────────────
-// Anti-cheat rejects metronomic/sub-100ms logs, so: action gaps 15-40
-// frames (250-670ms) with jitter, timestamps off the frame grid.
-type Rec = { frame: number; type: string; data: Record<string, unknown>; time: number };
-
-function playBot(game: any, decide: (g: any, frame: number) => { type: string; data: any } | null): Rec[] {
-  const log: Rec[] = [];
-  let frame = 0;
-  let nextAction = 30 + Math.floor(Math.random() * 30);
-  while (!game.isFinished() && frame < 60000) {
-    if (frame >= nextAction) {
-      const inp = decide(game, frame);
-      if (inp) {
-        const rec: Rec = {
-          frame,
-          type: inp.type,
-          data: inp.data,
-          time: Math.round(frame * 16.667 + Math.random() * 9 + 1),
-        };
-        game.onInput(rec);
-        log.push(rec);
-        nextAction = frame + 15 + Math.floor(Math.random() * 25);
-      } else {
-        nextAction = frame + 2 + Math.floor(Math.random() * 3);
-      }
-    }
-    game.tick();
-    frame++;
-  }
-  return log;
-}
-
-const BOTS: Record<string, { cls: string; decide: (g: any, f: number) => { type: string; data: any } | null }> = {
-  "aim-master": {
-    cls: "AimMasterGame",
-    decide: (g) => {
-      const t = (g.getState().display.targets || []).find((t: any) => t.active && t.radius > 4);
-      if (!t) return null;
-      const jitter = () => (Math.random() - 0.5) * t.radius * 0.6;
-      return { type: "click", data: { x: t.x + jitter(), y: t.y + jitter() } };
-    },
-  },
-  minefield: {
-    cls: "MinefieldGame",
-    decide: (g) => {
-      const grid = g.grid; // peek internals: bots may cheat, anti-cheat's job is timing
-      if (!grid) return null;
-      for (let y = 0; y < grid.length; y++)
-        for (let x = 0; x < grid[y].length; x++) {
-          const c = grid[y][x];
-          if (!c.isMine && !(c.revealed ?? c.isRevealed)) return { type: "click", data: { x, y } };
-        }
-      return null;
-    },
-  },
-  "reaction-test": {
-    cls: "ReactionTestGame",
-    decide: (() => {
-      let goSince = -1;
-      return (g: any, frame: number) => {
-        const st = g.getState().display.state;
-        if (st === "signal") {
-          if (goSince < 0) goSince = frame;
-          // react ~120-230ms after the signal (7-11 frames + detection lag)
-          if (frame - goSince >= 7 + Math.floor(Math.random() * 5)) {
-            goSince = -1;
-            return { type: "tap", data: {} };
-          }
-          return null;
-        }
-        goSince = -1;
-        return null;
-      };
-    })(),
-  },
-  "simon-pro": {
-    cls: "SimonProGame",
-    decide: (g) => {
-      const d = g.getState().display;
-      if (d.phase !== "input") return null;
-      const next = d.sequence[d.playerProgress];
-      if (next === undefined) return null;
-      return { type: "tap", data: { button: next } };
-    },
-  },
-};
+// ── humanlike bots for all 10 games ────────────────────────────────────
+// Shared with the offline coverage check (bots-offline-check.ts), which
+// verifies win rates, replay determinism, and anti-cheat-safe input timing
+// against the same compiled game modules the replay verifier loads.
+import { BOTS, playBot } from "./e2e-bots";
 
 // ── api helpers ────────────────────────────────────────────────────────
 let jwt = "";
@@ -284,7 +204,7 @@ async function main() {
   const game = new mod[bot.cls]();
   const level = session.difficulty?.level ?? 6;
   game.init(session.seed, { seed: session.seed, level, params: {} });
-  const log = playBot(game, bot.decide);
+  const log = playBot(game, bot.makeDecide(), bot.pace);
   const finalState = game.getState();
   console.log(`play     : ${session.game_id} score ${finalState.score} won=${finalState.won} (${log.length} inputs)`);
 

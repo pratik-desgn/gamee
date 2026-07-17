@@ -79,9 +79,18 @@ function difficultyFromParams(diff: DifficultyParams): HelixDropDifficulty {
   const dropSpeed = 1 + (level - 1) * (4 / 9);
   // targetScore: ~40% at level 1 → ~80% at level 10
   const targetScore = Math.round(platformCount * (0.4 + (level - 1) * (0.4 / 9)));
-  // hazardWidth: 30° at level 1 → 90° at level 10 (bigger death zone —
-  // less room for sloppy rotation)
-  const hazardWidth = Math.round(30 + (level - 1) * (60 / 9));
+  // hazardWidth: 30° at level 1 → 50° at level 10 (bigger death zone —
+  // less room for sloppy rotation). Hard-capped at 50°: after a pass the
+  // ball falls PLATFORM_SPACING px while the player steers the landing
+  // angle, so the reachable landing arc is rotationSpeed × (spacing /
+  // dropSpeed) = 60° at every level (both knobs scale identically) minus
+  // up to ~2 ticks of pass/landing quantization. The original 30→90°
+  // scale let a single platform's hazard cover that whole arc — a forced
+  // death no input sequence could avoid (~5% of platforms at level 8,
+  // compounding to a ~6% ceiling on the win probability of PERFECT play
+  // across a 57-platform target). A death zone must be dodgeable to be a
+  // skill mechanic; 50° leaves ≥10° of always-reachable safe arc.
+  const hazardWidth = Math.min(50, Math.round(30 + (level - 1) * (60 / 9)));
 
   // Allow explicit params to override
   const d = diff.params;

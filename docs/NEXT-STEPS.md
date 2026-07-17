@@ -528,6 +528,87 @@ retune needed before devnet play.
 
 ---
 
+## e2e bots for all 10 games + four real bugs found (2026-07-17, ninth pass)
+
+Closed the standing follow-up from increment 2: **the devnet e2e now has a
+winning bot for every game** (was 4/10, which forced fragile wheel-weight
+skewing to prove payouts). Bots moved to a shared module
+(`contracts/scripts/e2e-bots.ts`, imported by `e2e-devnet.ts`) with per-bot
+input pacing that stays inside the anti-cheat envelope, plus an offline
+coverage harness (`contracts/scripts/bots-offline-check.ts`, `npx ts-node`
+from `contracts/`) that runs every bot against the same compiled game
+modules the replay verifier loads and asserts: win rate at production base
+difficulty AND at the hardened (+3) level, replay determinism of the
+produced input log, `finalScore() === getState().score`, and that the log's
+timing passes a mirror of the analyzer's rules. Result: **8–10/10 wins at
+base difficulty for all ten games** (hardened is weaker for
+wing-rush/perfect-stack/sliding-puzzle — poll-granularity physics, accepted).
+New bots: wing-rush (empirically tuned flap controller — fancier MPC scored
+worse, same lesson as the bot-check script), dino-sprint (ascent-window
+jump), perfect-stack (adaptive alignment tolerance budgeted across remaining
+locks), helix-drop (gap-first direction planning + a falling controller that
+steers the landing angle out of the hazard), block-merge (depth-2
+adversarial-spawn search with a snake heuristic), sliding-puzzle
+(constructive ring reduction + IDA* 3×3 finish).
+
+Writing bots that *should* win exposed that four things made winning
+impossible — all real product bugs, all fixed and verified:
+
+1. **block-merge was provably unwinnable at every level** (value
+   conservation): each move spawns one tile worth ≤4, so after m moves the
+   board holds ≤ 4·(startTiles+m) total value — the 120/220/350 budgets
+   capped total value at 488/892/1416, strictly below the 512/1024/2048
+   targets. No player could ever have won since the tile-scale fix. Budgets
+   are now 330/650/1300 (~1.4× the expected-spawn floor of target/2.2;
+   1.24× still ran a strong search bot out of moves half the time).
+2. **sliding-puzzle generated unsolvable 4×4 boards — always.** The game's
+   `isSolvable` used the inverted parity rule for even grid widths
+   (required inversions+blank-row sum EVEN; the solved state itself has sum
+   1). Legally-shuffled boards (always solvable, sum odd) "failed" the
+   check, so the repair path swapped two adjacent tiles and made every
+   generated 4×4 genuinely unsolvable — production base difficulty 7 is a
+   4×4, so the game was unwinnable in production. Caught by BFS-proving a
+   ring-reduced 3×3 subgrid unreachable.
+3. **helix-drop had forced-death platforms.** The landing window after a
+   pass is rotationSpeed × (spacing/dropSpeed) = 60° at every level (the
+   knobs cancel), but hazardWidth scaled to 90° — a hazard covering the
+   whole window is a death no input sequence avoids (~5% of platforms at
+   level 8, compounding to a ~6% win-probability ceiling for PERFECT play
+   at the production base). hazardWidth now caps at 50°.
+4. **Anti-cheat's `frame_perfect_inputs` flagged every session of every
+   wallet** (`backend/internal/anticheat/analyzer.go`): it checked
+   frame-derived intervals (`frameDiff × 16.667`) against the 16.667ms
+   grid — vacuously true 100% of the time, human or bot. Every session got
+   botScore +0.2 → "flag", silently walking every wallet up the escalation
+   ladder into hardened (+3) difficulty (the e2e wallet had accrued 4 such
+   flags and was being served max-difficulty sessions). The rule now checks
+   the client's **wall-clock** `time` field against the frame grid — which
+   is what actually distinguishes a fabricated log (`time = frame×16.667`)
+   from a real client's Date.now() stamps. `InputEvent.Time` became
+   `float64` (the old `time.Duration` decoded JSON ms as ns, and would have
+   rejected fractional timestamps outright). The pre-existing
+   `TestAnalyzeInputTiming_CompositeFlagFallback` had *encoded* the broken
+   behavior as expected; rewritten, plus a positive/negative test pair for
+   the fixed rule. Bogus `frame_perfect_inputs` rows deleted from the dev DB.
+
+**Verified:** games suite 122/122 + invariant harness 750 groups all green
+after the three game fixes; `go build/vet/test ./...` green (analyzer tests
+updated); frontend gamesdk copy refreshed, `tsc --noEmit` clean. Live
+devnet: two full-loop settlements after the changes — simon-pro win
+(`3uT3smPZ…b6Jq6j`, +12.20 USDC) and, after the anti-cheat fix removed the
+wallet's bogus hardening, a **perfect-stack** (new bot) win at real level 6:
+[`2PWHMXYu…riHMfd`](https://explorer.solana.com/tx/2PWHMXYu6fe5hbH99DU8jfcFYwSfA5emAQ3nVNSQQAwGhhvFLepwu49X486aa1dCcLggBe7YzNuGMdWvKCriHMfd?cluster=devnet),
+small vault 3.042 → 0.152 USDC, player +2.89 USDC, plus a verified
+wing-rush loss (loss pipeline exercised too).
+
+Economy note: the three game fixes turn two never-winnable games into
+winnable ones and soften helix-drop's top end — observed win rates will
+rise and the difficulty governor will re-tune `base_difficulty` live; no
+manual retune needed. The wheel-weight skew workaround in the tier proofs
+above is now obsolete.
+
+---
+
 ## What's actually done (cumulative, across all sessions)
 
 **Contract correctness & security** — fee split fixed to the real 80/10/5/5 (jackpot/platform/referral/dev), `buy_ticket` validates every destination account + enforces the exact ticket price on-chain, `pay_jackpot` requires the verifier authority (was drainable by anyone), `commit_spin` requires verifier co-signature (players couldn't pick their own game), `initialize_jackpot` added (vault PDAs previously had no creation path), jackpot accounting reads the real post-payout token balance instead of underflowing on first win. Contract now compiles and builds to SBF; three separate compile bugs were fixed along the way (unqualified `Context<>` types, a borrow-check ordering issue, and boxing the 12-account `buy_ticket` struct that overflowed the 4KB SBF stack frame).
