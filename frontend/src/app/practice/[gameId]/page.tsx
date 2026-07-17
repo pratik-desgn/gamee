@@ -4,6 +4,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { GAME_REGISTRY } from '@/lib/gameRegistry';
+import { GAME_GUIDES } from '@/lib/gameGuides';
+import { useGameCanvasInput } from '@/lib/useGameCanvasInput';
 import type { TimestampedInput } from '@/types';
 import type { JackpotGame } from '@/gamesdk/sdk/interface';
 import type { Renderer } from '@/gamesdk/sdk/renderer';
@@ -119,92 +121,26 @@ export default function PracticePage() {
     game.onInput({ frame: frameRef.current, time: Date.now(), ...partial });
   }, [status]);
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !entry) return;
+  // Input wiring (mouse + touch + keyboard) is shared with /play — see
+  // lib/useGameCanvasInput.ts.
+  const getEntry = useCallback(() => entry ?? null, [entry]);
+  const getDisplay = useCallback(
+    () => (gameRef.current?.getState().display ?? {}) as Record<string, unknown>,
+    [],
+  );
+  useGameCanvasInput({
+    canvasRef,
+    getEntry,
+    getDisplay,
+    enabled: status === 'playing',
+    sendInput,
+  });
 
-    const onMouseDown = (e: MouseEvent) => {
-      if (entry.clickMode === 'none' || status !== 'playing') return;
-      const rect = canvas.getBoundingClientRect();
-      const px = ((e.clientX - rect.left) / rect.width) * canvas.width;
-      const py = ((e.clientY - rect.top) / rect.height) * canvas.height;
-      if (entry.clickMode === 'pixel') {
-        sendInput({ type: 'click', data: { x: px, y: py } });
-      } else if (entry.clickMode === 'grid') {
-        const display = (gameRef.current?.getState().display ?? {}) as Record<string, unknown>;
-        const gridSize = (display.gridSize as number) ?? 4;
-        const cell = canvas.width / gridSize;
-        sendInput({ type: 'click', data: { x: Math.floor(px / cell), y: Math.floor(py / cell) } });
-      }
-    };
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (status !== 'playing') return;
-      if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' '].includes(e.key)) e.preventDefault();
-      sendInput({ type: 'keydown', data: { key: e.key } });
-    };
-    const onKeyUp = (e: KeyboardEvent) => {
-      if (status !== 'playing') return;
-      sendInput({ type: 'keyup', data: { key: e.key } });
-    };
-
-    // Touch fallback for keyboard-only games (see GameEntry.touch): sends
-    // the same keydown/keyup inputs as the keyboard path — mirrors
-    // play/[sessionId]/page.tsx.
-    let heldKey: string | null = null;
-    let swipeStart: { x: number; y: number } | null = null;
-    const onTouchStart = (e: TouchEvent) => {
-      if (!entry.touch || status !== 'playing') return;
-      e.preventDefault(); // no scroll, no synthetic mousedown
-      const t = e.touches[0];
-      if (entry.touch === 'hold-lr') {
-        const rect = canvas.getBoundingClientRect();
-        heldKey = t.clientX - rect.left < rect.width / 2 ? 'ArrowLeft' : 'ArrowRight';
-        sendInput({ type: 'keydown', data: { key: heldKey } });
-      } else {
-        swipeStart = { x: t.clientX, y: t.clientY };
-      }
-    };
-    const onTouchEnd = (e: TouchEvent) => {
-      if (!entry.touch) return;
-      e.preventDefault();
-      if (heldKey) {
-        sendInput({ type: 'keyup', data: { key: heldKey } });
-        heldKey = null;
-      }
-      if (swipeStart) {
-        const t = e.changedTouches[0];
-        const dx = t.clientX - swipeStart.x;
-        const dy = t.clientY - swipeStart.y;
-        swipeStart = null;
-        if (Math.max(Math.abs(dx), Math.abs(dy)) >= 24) {
-          const key = Math.abs(dx) > Math.abs(dy)
-            ? (dx > 0 ? 'ArrowRight' : 'ArrowLeft')
-            : (dy > 0 ? 'ArrowDown' : 'ArrowUp');
-          sendInput({ type: 'keydown', data: { key } });
-          sendInput({ type: 'keyup', data: { key } });
-        }
-      }
-    };
-
-    canvas.addEventListener('mousedown', onMouseDown);
-    canvas.addEventListener('touchstart', onTouchStart, { passive: false });
-    canvas.addEventListener('touchend', onTouchEnd, { passive: false });
-    canvas.addEventListener('touchcancel', onTouchEnd, { passive: false });
-    window.addEventListener('keydown', onKeyDown);
-    window.addEventListener('keyup', onKeyUp);
-    return () => {
-      canvas.removeEventListener('mousedown', onMouseDown);
-      canvas.removeEventListener('touchstart', onTouchStart);
-      canvas.removeEventListener('touchend', onTouchEnd);
-      canvas.removeEventListener('touchcancel', onTouchEnd);
-      window.removeEventListener('keydown', onKeyDown);
-      window.removeEventListener('keyup', onKeyUp);
-    };
-  }, [entry, status, sendInput]);
+  const guide = GAME_GUIDES[gameId];
 
   if (!entry) {
     return (
-      <div className="h-screen overflow-hidden pt-20 flex items-center justify-center px-4">
+      <div className="h-[100dvh] overflow-hidden pt-20 flex items-center justify-center px-4">
         <div className="glass rounded-2xl p-8 text-center max-w-md">
           <p className="text-gamee-muted">Unknown game &quot;{gameId}&quot;.</p>
           <Link href="/#games" className="mt-4 inline-block text-purple-400 hover:text-purple-300">← Back to games</Link>
@@ -222,7 +158,9 @@ export default function PracticePage() {
     // resolution — click coordinates are already computed as a ratio via
     // getBoundingClientRect(), so scaling the displayed size down doesn't
     // affect input accuracy.
-    <div className="h-screen overflow-hidden pt-20 pb-3 flex flex-col items-center justify-center px-4">
+    // h-[100dvh], not h-screen: 100vh overflows under mobile browser
+    // chrome (URL bar) and pushed the footer off-screen on phones.
+    <div className="h-[100dvh] overflow-hidden pt-20 pb-3 flex flex-col items-center justify-center px-4">
       <div className="glass rounded-2xl p-4 sm:p-5 w-full max-w-2xl flex flex-col gap-3 max-h-full">
         <div className="flex items-center justify-between gap-3 shrink-0">
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-cyan-500/15 border border-cyan-500/30 text-xs font-bold text-cyan-300">
@@ -235,8 +173,20 @@ export default function PracticePage() {
         </div>
 
         {status === 'idle' && (
-          <div className="text-center py-6 space-y-4 shrink-0">
-            <h1 className="text-xl font-bold capitalize">{gameId.replace(/-/g, ' ')}</h1>
+          <div className="text-center py-4 space-y-4 shrink-0 overflow-y-auto">
+            <h1 className="text-xl font-bold">
+              {guide ? `${guide.icon} ${guide.name}` : gameId.replace(/-/g, ' ')}
+            </h1>
+            {guide && (
+              <div className="max-w-md mx-auto space-y-2 text-left">
+                <p className="text-sm text-gamee-muted leading-relaxed">{guide.goal}</p>
+                <div className="text-xs text-gamee-muted space-y-1 bg-white/5 border border-gamee-border rounded-lg p-3">
+                  <div className="hidden sm:block">🖥️ {guide.controls.desktop}</div>
+                  <div className="sm:hidden">📱 {guide.controls.mobile}</div>
+                  {guide.tip && <div className="pt-1 border-t border-gamee-border/60">💡 {guide.tip}</div>}
+                </div>
+              </div>
+            )}
             <div>
               <label htmlFor="level" className="text-sm text-gamee-muted block mb-2">
                 Difficulty level: <span className="text-gamee-text font-bold tabular-nums">{level}</span> / 10
@@ -272,7 +222,7 @@ export default function PracticePage() {
           className={`mx-auto max-w-full w-auto rounded-xl border border-gamee-border bg-[#1a1a2e] cursor-pointer shadow-inner min-h-0 flex-1 object-contain ${
             status === 'idle' ? 'hidden' : ''
           }`}
-          style={{ maxHeight: '52vh' }}
+          style={{ maxHeight: '52vh', touchAction: 'none' }}
         />
 
         {status === 'finished' && (
@@ -298,15 +248,12 @@ export default function PracticePage() {
         )}
 
         <div className="text-center text-xs text-gamee-muted shrink-0">
-          {status === 'playing'
-            ? entry.clickMode === 'none'
-              ? entry.touch === 'hold-lr'
-                ? 'Arrow keys — or hold the left/right side of the board'
-                : entry.touch === 'swipe'
-                  ? 'Arrow keys — or swipe on the board'
-                  : 'Use your keyboard to play'
-              : 'Click/tap the board, or use your keyboard'
-            : status === 'loading' ? 'Loading…' : ''}
+          {status === 'playing' && guide ? (
+            <>
+              <span className="hidden sm:inline">🖥️ {guide.controls.desktop}</span>
+              <span className="sm:hidden">📱 {guide.controls.mobile}</span>
+            </>
+          ) : status === 'loading' ? 'Loading…' : ''}
         </div>
 
         <div className="text-center shrink-0">

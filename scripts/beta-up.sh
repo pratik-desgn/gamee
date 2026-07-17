@@ -105,11 +105,23 @@ for i in $(seq 1 30); do curl -s -m 2 localhost:8080/health | grep -q ok && brea
 curl -s -m 2 localhost:8080/health | grep -q ok || die "backend did not come up (see $LOG_DIR/backend.log)"
 log "backend OK"
 
-# ── 5. Frontend (rebuild only if there is no build yet) ───────
+# ── 5. Frontend (rebuild when missing OR stale) ───────────────
+# Staleness check matters: serving an old .next after source changes once
+# took the whole homepage down with a hydration crash (the stale bundle
+# spoke an older API contract). Any source/config file newer than the
+# build marker triggers a rebuild.
 old=$(port_pid 3000); [ -n "$old" ] && kill "$old" 2>/dev/null && sleep 1 || true
 cd "$ROOT/frontend"
-if [ ! -d .next ]; then
-  log "building frontend (first run)..."
+stale=""
+if [ ! -f .next/BUILD_ID ]; then
+  stale="first run"
+elif [ -n "$(find src public package.json next.config.js tailwind.config.ts tsconfig.json "$ROOT/games/dist" -newer .next/BUILD_ID -print -quit 2>/dev/null)" ]; then
+  # games/dist is included because prebuild (copy-gamesdk) pulls the game
+  # engine from there — a games rebuild must propagate into the bundle.
+  stale="sources changed since last build"
+fi
+if [ -n "$stale" ]; then
+  log "building frontend ($stale)..."
   npm run build >"$LOG_DIR/frontend-build.log" 2>&1 || die "frontend build failed (see $LOG_DIR/frontend-build.log)"
 fi
 PORT=3000 setsid npm start >"$LOG_DIR/frontend.log" 2>&1 &

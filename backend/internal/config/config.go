@@ -85,6 +85,13 @@ type Config struct {
 	// any origin — allowed only when Environment == "development".
 	AllowedOrigins []string
 
+	// GovernorExcludeWallets are wallets whose session outcomes the
+	// difficulty governor ignores (GOVERNOR_EXCLUDE_WALLETS, comma-
+	// separated). Meant for test/bot wallets (the devnet e2e player):
+	// their superhuman win rates would otherwise walk base_difficulty to
+	// max for real players.
+	GovernorExcludeWallets []string
+
 	// Rate Limiting
 	RateLimitPerSecond int
 	RateLimitBurst     int
@@ -149,6 +156,7 @@ func Load() *Config {
 		FaucetPerDay:       getEnvInt("FAUCET_PER_DAY", 2),
 		BetaAllowedWallets: getEnvStringSlice("BETA_ALLOWED_WALLETS", nil),
 		AllowedOrigins:     getEnvStringSlice("ALLOWED_ORIGINS", nil),
+		GovernorExcludeWallets: getEnvStringSlice("GOVERNOR_EXCLUDE_WALLETS", nil),
 		RateLimitPerSecond: getEnvInt("RATE_LIMIT_PER_SECOND", 10),
 		RateLimitBurst:     getEnvInt("RATE_LIMIT_BURST", 20),
 		// 1,000 USDC — matches jackpot.Service's "mega" tier boundary; a

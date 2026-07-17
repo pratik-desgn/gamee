@@ -18,6 +18,7 @@ export interface PerfectStackDifficulty {
   speedIncrease: number;     // 0.1–0.5 per stack
   baseBlockWidth: number;    // 40–80 px
   targetScore: number;       // score needed to win
+  maxSpeed: number;          // cap on baseSpeed + score*speedIncrease
 }
 
 export interface StackBlock {
@@ -60,6 +61,15 @@ function difficultyFromParams(diff: DifficultyParams): PerfectStackDifficulty {
     speedIncrease: d.speedIncrease ?? Math.round(speedIncrease * 100) / 100,
     baseBlockWidth: d.baseBlockWidth ?? baseBlockWidth,
     targetScore: d.targetScore ?? targetScore,
+    // Cap on the per-stack speed ramp. Uncapped, level 8 reached
+    // baseSpeed + 23*speedIncrease ≈ 14.5 px/frame on a 49px block — the
+    // average alignment loss per lock (~speed/4 even for frame-perfect
+    // timing) then sums past the block's whole width before the 24-stack
+    // target, i.e. the top level was statistically unwinnable by ANY
+    // player (same defect class as helix-drop's uncapped hazard arc).
+    // 8 px/frame keeps a ~2-frame (~33ms) precision window at the top —
+    // brutal but physically winnable.
+    maxSpeed: d.maxSpeed ?? 8,
   };
 }
 
@@ -182,8 +192,11 @@ export class PerfectStackGame implements JackpotGame {
       return;
     }
 
-    // Update speed for next block
-    this.currentSpeed = this.difficulty.baseSpeed + this.score * this.difficulty.speedIncrease;
+    // Update speed for next block (capped — see maxSpeed's doc comment)
+    this.currentSpeed = Math.min(
+      this.difficulty.maxSpeed,
+      this.difficulty.baseSpeed + this.score * this.difficulty.speedIncrease,
+    );
 
     // The next block starts with the current locked block's width
     this.prevWidth = overlapWidth;

@@ -45,10 +45,21 @@ const (
 // Governor periodically adjusts per-game difficulty from observed win rates.
 type Governor struct {
 	db *pgxpool.Pool
+	// excludeWallets are ignored when sampling outcomes. The devnet e2e
+	// bots (contracts/scripts/e2e-bots.ts) win at superhuman rates — a few
+	// test runs would read as "winning too often" and walk every game's
+	// base_difficulty to max, wrecking the tuning real players see.
+	excludeWallets []string
 }
 
-func New(db *pgxpool.Pool) *Governor {
-	return &Governor{db: db}
+func New(db *pgxpool.Pool, excludeWallets []string) *Governor {
+	// Never nil: pgx encodes a nil slice as SQL NULL, and
+	// `NOT (x = ANY(NULL))` is NULL — which would silently filter out
+	// every row instead of none.
+	if excludeWallets == nil {
+		excludeWallets = []string{}
+	}
+	return &Governor{db: db, excludeWallets: excludeWallets}
 }
 
 // Start runs the adjustment loop until ctx is cancelled.
@@ -72,6 +83,8 @@ func (g *Governor) runOnce(ctx context.Context) {
 	// Denominator is verified sessions only (verdict = 'match'): mismatch/
 	// rejected/timeout replays are cheating attempts or infra failures, not
 	// skill outcomes, and would dilute the observed rate.
+	// game_sessions has no wallet column — the owning wallet lives on the
+	// ticket, so the exclusion filter joins through tickets.
 	rows, err := g.db.Query(ctx, `
 		SELECT gs.game_id,
 		       COUNT(*) FILTER (WHERE r.won),
@@ -79,11 +92,13 @@ func (g *Governor) runOnce(ctx context.Context) {
 		       gm.base_difficulty, gm.min_difficulty, gm.max_difficulty
 		FROM replays r
 		JOIN game_sessions gs ON gs.id = r.session_id
+		JOIN tickets t ON t.id = gs.ticket_id
 		JOIN games gm ON gm.id = gs.game_id
 		WHERE r.verdict = 'match'
 		  AND r.verified_at > NOW() - $1::interval
+		  AND NOT (t.wallet_address = ANY($2))
 		GROUP BY gs.game_id, gm.base_difficulty, gm.min_difficulty, gm.max_difficulty`,
-		sampleWindow.String())
+		sampleWindow.String(), g.excludeWallets)
 	if err != nil {
 		log.Printf("[difficulty] sample query failed: %v", err)
 		return

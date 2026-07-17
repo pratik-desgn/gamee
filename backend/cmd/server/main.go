@@ -100,7 +100,7 @@ func main() {
 
 	// Closed-loop difficulty: nudge games.base_difficulty from observed
 	// verified win rates to hold the average jackpot in its target range.
-	go difficulty.New(pgPool).Start(ctx)
+	go difficulty.New(pgPool, cfg.GovernorExcludeWallets).Start(ctx)
 
 	// Initialize Gin router.
 	router := gin.New()

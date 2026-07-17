@@ -4,6 +4,8 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api';
 import { GAME_REGISTRY } from '@/lib/gameRegistry';
+import { GAME_GUIDES, objectiveText } from '@/lib/gameGuides';
+import { useGameCanvasInput } from '@/lib/useGameCanvasInput';
 import type { TimestampedInput } from '@/types';
 import type { JackpotGame } from '@/gamesdk/sdk/interface';
 import type { Renderer } from '@/gamesdk/sdk/renderer';
@@ -40,7 +42,10 @@ export default function PlayPage() {
   const [gameId, setGameId] = useState<string | null>(null);
   const [score, setScore] = useState(0);
   const [targetScore, setTargetScore] = useState(0);
-  const [gameState, setGameState] = useState<'connecting' | 'loading' | 'playing' | 'finished'>('connecting');
+  // 'ready' = game loaded and first frame rendered, but ticking hasn't
+  // started — the how-to-play overlay is showing. The clock only starts
+  // when the player dismisses it, so reading the objective costs nothing.
+  const [gameState, setGameState] = useState<'connecting' | 'loading' | 'ready' | 'playing' | 'finished'>('connecting');
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const finishGame = useCallback(async (finalScore: number) => {
@@ -158,110 +163,43 @@ export default function PlayPage() {
       gameRef.current = game;
       rendererRef.current = new RendererClass(ctx, entry.width, entry.height);
       frameRef.current = 0;
-      lastTickRef.current = performance.now();
-      setGameState('playing');
-      rafRef.current = requestAnimationFrame(loop);
+      // Render the opening frame behind the how-to-play overlay, but don't
+      // start ticking until the player dismisses it.
+      rendererRef.current.render(game.getState().display ?? {});
+      setGameState('ready');
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : `Failed to load game "${id}"`);
     }
   };
 
+  const startPlaying = useCallback(() => {
+    setGameState('playing');
+    lastTickRef.current = performance.now();
+    rafRef.current = requestAnimationFrame(loop);
+  }, [loop]);
+
   useEffect(() => {
     return () => cancelAnimationFrame(rafRef.current);
   }, []);
 
-  // Input wiring: click/tap for 'pixel' and 'grid' games, window-level
-  // keyboard for every game (space/arrows/number keys) — mirrors
-  // games/playground/main.ts's input handling exactly, since that's the
-  // same interface every game's onInput expects.
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const onMouseDown = (e: MouseEvent) => {
-      const entry = entryRef.current;
-      if (!entry || entry.clickMode === 'none' || gameState !== 'playing') return;
-      const rect = canvas.getBoundingClientRect();
-      const px = ((e.clientX - rect.left) / rect.width) * canvas.width;
-      const py = ((e.clientY - rect.top) / rect.height) * canvas.height;
-
-      if (entry.clickMode === 'pixel') {
-        sendInput({ type: 'click', data: { x: px, y: py } });
-      } else if (entry.clickMode === 'grid') {
-        const display = (gameRef.current?.getState().display ?? {}) as Record<string, unknown>;
-        const gridSize = (display.gridSize as number) ?? 4;
-        const cell = canvas.width / gridSize;
-        sendInput({ type: 'click', data: { x: Math.floor(px / cell), y: Math.floor(py / cell) } });
-      }
-    };
-
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (gameState !== 'playing') return;
-      if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' '].includes(e.key)) e.preventDefault();
-      sendInput({ type: 'keydown', data: { key: e.key } });
-    };
-    const onKeyUp = (e: KeyboardEvent) => {
-      if (gameState !== 'playing') return;
-      sendInput({ type: 'keyup', data: { key: e.key } });
-    };
-
-    // Touch fallback for keyboard-only games (see GameEntry.touch): sends
-    // the same keydown/keyup inputs as the keyboard path, so the recorded
-    // input log replays identically server-side.
-    let heldKey: string | null = null;
-    let swipeStart: { x: number; y: number } | null = null;
-    const onTouchStart = (e: TouchEvent) => {
-      const entry = entryRef.current;
-      if (!entry?.touch || gameState !== 'playing') return;
-      e.preventDefault(); // no scroll, no synthetic mousedown
-      const t = e.touches[0];
-      if (entry.touch === 'hold-lr') {
-        const rect = canvas.getBoundingClientRect();
-        heldKey = t.clientX - rect.left < rect.width / 2 ? 'ArrowLeft' : 'ArrowRight';
-        sendInput({ type: 'keydown', data: { key: heldKey } });
-      } else {
-        swipeStart = { x: t.clientX, y: t.clientY };
-      }
-    };
-    const onTouchEnd = (e: TouchEvent) => {
-      if (!entryRef.current?.touch) return;
-      e.preventDefault();
-      if (heldKey) {
-        sendInput({ type: 'keyup', data: { key: heldKey } });
-        heldKey = null;
-      }
-      if (swipeStart) {
-        const t = e.changedTouches[0];
-        const dx = t.clientX - swipeStart.x;
-        const dy = t.clientY - swipeStart.y;
-        swipeStart = null;
-        if (Math.max(Math.abs(dx), Math.abs(dy)) >= 24) {
-          const key = Math.abs(dx) > Math.abs(dy)
-            ? (dx > 0 ? 'ArrowRight' : 'ArrowLeft')
-            : (dy > 0 ? 'ArrowDown' : 'ArrowUp');
-          sendInput({ type: 'keydown', data: { key } });
-          sendInput({ type: 'keyup', data: { key } });
-        }
-      }
-    };
-
-    canvas.addEventListener('mousedown', onMouseDown);
-    canvas.addEventListener('touchstart', onTouchStart, { passive: false });
-    canvas.addEventListener('touchend', onTouchEnd, { passive: false });
-    canvas.addEventListener('touchcancel', onTouchEnd, { passive: false });
-    window.addEventListener('keydown', onKeyDown);
-    window.addEventListener('keyup', onKeyUp);
-    return () => {
-      canvas.removeEventListener('mousedown', onMouseDown);
-      canvas.removeEventListener('touchstart', onTouchStart);
-      canvas.removeEventListener('touchend', onTouchEnd);
-      canvas.removeEventListener('touchcancel', onTouchEnd);
-      window.removeEventListener('keydown', onKeyDown);
-      window.removeEventListener('keyup', onKeyUp);
-    };
-  }, [gameState, sendInput]);
+  // Input wiring (mouse + touch + keyboard) is shared with /practice —
+  // see lib/useGameCanvasInput.ts. Same input log either way, so replay
+  // verification is device-agnostic.
+  const getEntry = useCallback(() => entryRef.current, []);
+  const getDisplay = useCallback(
+    () => (gameRef.current?.getState().display ?? {}) as Record<string, unknown>,
+    [],
+  );
+  useGameCanvasInput({
+    canvasRef,
+    getEntry,
+    getDisplay,
+    enabled: gameState === 'playing',
+    sendInput,
+  });
 
   const entry = entryRef.current;
+  const guide = gameId ? GAME_GUIDES[gameId] : null;
 
   return (
     // h-screen + overflow-hidden: the whole game (header, canvas, footer)
@@ -271,10 +209,15 @@ export default function PlayPage() {
     // width/height attributes, which stay at the game's native resolution
     // — click coordinates are already a ratio via getBoundingClientRect(),
     // so scaling the displayed size down doesn't affect input accuracy.
-    <div className="h-screen overflow-hidden pt-20 pb-3 flex flex-col items-center justify-center px-4">
+    // h-[100dvh], not h-screen: 100vh overflows under mobile browser
+    // chrome (URL bar), which pushed the bottom of the game off-screen on
+    // phones; dvh tracks the real visible viewport.
+    <div className="h-[100dvh] overflow-hidden pt-20 pb-3 flex flex-col items-center justify-center px-4">
       <div className="glass rounded-2xl p-4 sm:p-5 w-full max-w-2xl flex flex-col gap-3 max-h-full">
         <div className="flex justify-between items-center gap-3 shrink-0">
-          <h1 className="text-xl font-bold truncate">{gameId || 'Loading...'}</h1>
+          <h1 className="text-xl font-bold truncate">
+            {guide ? `${guide.icon} ${guide.name}` : gameId || 'Loading...'}
+          </h1>
           <div className="flex items-center gap-3 shrink-0">
             {(gameState === 'connecting' || gameState === 'loading') && (
               <span className="text-xs font-semibold text-gamee-muted animate-pulse">
@@ -298,14 +241,40 @@ export default function PlayPage() {
           </div>
         )}
 
-        <canvas
-          ref={canvasRef}
-          width={entry?.width ?? 400}
-          height={entry?.height ?? 400}
-          className="mx-auto max-w-full w-auto rounded-xl border border-gamee-border bg-[#1a1a2e] cursor-pointer shadow-inner min-h-0 flex-1 object-contain"
-          style={{ maxHeight: '58vh' }}
-          tabIndex={0}
-        />
+        <div className="relative mx-auto max-w-full min-h-0 flex-1 flex">
+          <canvas
+            ref={canvasRef}
+            width={entry?.width ?? 400}
+            height={entry?.height ?? 400}
+            className="mx-auto max-w-full w-auto rounded-xl border border-gamee-border bg-[#1a1a2e] cursor-pointer shadow-inner min-h-0 object-contain"
+            style={{ maxHeight: '58vh', touchAction: 'none' }}
+            tabIndex={0}
+          />
+          {/* How-to-play overlay: game is loaded and rendered behind it;
+              the clock starts only when the player taps Start. */}
+          {gameState === 'ready' && guide && (
+            <div className="absolute inset-0 rounded-xl bg-[#12121f]/90 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+              <div className="max-w-sm text-center space-y-3">
+                <div className="text-3xl">{guide.icon}</div>
+                <div className="inline-block px-3 py-1 rounded-full bg-cyan-500/15 border border-cyan-500/30 text-xs font-bold text-cyan-300">
+                  🏆 {objectiveText(guide, targetScore)}
+                </div>
+                <p className="text-sm text-gamee-muted leading-relaxed">{guide.goal}</p>
+                <div className="text-xs text-gamee-muted space-y-1 text-left bg-white/5 border border-gamee-border rounded-lg p-3">
+                  <div className="hidden sm:block">🖥️ {guide.controls.desktop}</div>
+                  <div className="sm:hidden">📱 {guide.controls.mobile}</div>
+                  {guide.tip && <div className="pt-1 border-t border-gamee-border/60">💡 {guide.tip}</div>}
+                </div>
+                <button
+                  onClick={startPlaying}
+                  className="w-full px-8 py-3 rounded-xl bg-gradient-to-r from-purple-600 to-cyan-600 text-white font-bold shadow-lg shadow-purple-500/20 hover:shadow-purple-500/40 transition-all"
+                >
+                  ▶ Start
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
 
         {gameState === 'finished' && !loadError && (
           <div className="p-4 rounded-xl text-center bg-white/5 border border-gamee-border animate-fade-in-up shrink-0">
@@ -318,17 +287,18 @@ export default function PlayPage() {
         )}
 
         <div className="text-center text-xs text-gamee-muted shrink-0">
-          {gameState === 'playing'
-            ? entry?.clickMode === 'none'
-              ? entry?.touch === 'hold-lr'
-                ? 'Arrow keys — or hold the left/right side of the board'
-                : entry?.touch === 'swipe'
-                  ? 'Arrow keys — or swipe on the board'
-                  : 'Use your keyboard to play'
-              : 'Click/tap the board, or use your keyboard'
-            : gameState === 'finished'
-              ? 'Verifying your result…'
-              : 'Setting up your session…'}
+          {gameState === 'playing' && guide ? (
+            <>
+              <span className="hidden sm:inline">🖥️ {guide.controls.desktop}</span>
+              <span className="sm:hidden">📱 {guide.controls.mobile}</span>
+            </>
+          ) : gameState === 'finished' ? (
+            'Verifying your result…'
+          ) : gameState === 'ready' ? (
+            'Read the goal, then hit Start when you’re ready'
+          ) : (
+            'Setting up your session…'
+          )}
         </div>
       </div>
     </div>

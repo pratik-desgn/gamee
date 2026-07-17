@@ -33,7 +33,15 @@ export default function HomePage() {
     if (!openGame) return;
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpenGame(null);
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    // Lock page scroll behind the modal — otherwise the page keeps
+    // scrolling under it (especially jarring on touch, where a swipe on
+    // the modal moves the whole homepage).
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
   }, [openGame]);
 
   return (
@@ -131,7 +139,7 @@ export default function HomePage() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="game-guide-title"
-            className="glass rounded-2xl p-7 max-w-sm w-full relative animate-fade-in-up"
+            className="glass rounded-2xl p-7 max-w-sm w-full relative animate-fade-in-up max-h-[85dvh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <button
@@ -150,18 +158,25 @@ export default function HomePage() {
             <div className="space-y-4 text-left">
               <div>
                 <h4 className="text-xs font-bold uppercase tracking-wide text-purple-400 mb-1.5">Goal</h4>
-                <p className="text-sm text-gamee-muted leading-relaxed">{GAME_GUIDES[openGame.name]?.goal}</p>
+                <p className="text-sm text-gamee-muted leading-relaxed">{GAME_GUIDES[openGame.slug]?.goal}</p>
               </div>
               <div>
                 <h4 className="text-xs font-bold uppercase tracking-wide text-cyan-400 mb-1.5">Controls</h4>
                 <ul className="space-y-1">
-                  {GAME_GUIDES[openGame.name]?.controls.map((c) => (
-                    <li key={c} className="text-sm text-gamee-muted leading-relaxed flex gap-2">
-                      <span aria-hidden>•</span>{c}
-                    </li>
-                  ))}
+                  <li className="text-sm text-gamee-muted leading-relaxed flex gap-2">
+                    <span aria-hidden>🖥️</span>{GAME_GUIDES[openGame.slug]?.controls.desktop}
+                  </li>
+                  <li className="text-sm text-gamee-muted leading-relaxed flex gap-2">
+                    <span aria-hidden>📱</span>{GAME_GUIDES[openGame.slug]?.controls.mobile}
+                  </li>
                 </ul>
               </div>
+              {GAME_GUIDES[openGame.slug]?.tip && (
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wide text-amber-400 mb-1.5">Tip</h4>
+                  <p className="text-sm text-gamee-muted leading-relaxed">{GAME_GUIDES[openGame.slug]?.tip}</p>
+                </div>
+              )}
             </div>
             <div className="mt-6 flex gap-2.5">
               <Link

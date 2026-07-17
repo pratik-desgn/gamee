@@ -41,6 +41,16 @@ export interface GameEntry {
   //   'swipe':   a swipe sends one arrow-key press in its direction
   //              (block-merge)
   touch?: 'hold-lr' | 'swipe';
+  // Custom pointer mapping for games whose canvas is a set of controls
+  // rather than a plain field/grid (simon-pro's buttons). Takes canvas-
+  // space pixel coordinates + the current display state and returns the
+  // game input to send, or null for a miss. Takes precedence over
+  // clickMode in the pages' pointer handlers.
+  mapClick?: (
+    px: number,
+    py: number,
+    display: Record<string, unknown>,
+  ) => { type: string; data: Record<string, unknown> } | null;
   load: () => Promise<{
     Game: new () => JackpotGame;
     Renderer: new (ctx: CanvasRenderingContext2D, w: number, h: number) => Renderer;
@@ -132,6 +142,32 @@ export const GAME_REGISTRY: Record<string, GameEntry> = {
     width: 400,
     height: 400,
     clickMode: 'none',
+    // Tap/click-to-button hit test, replicating SimonProRenderer's
+    // layoutButtons() math exactly (padding 20, gap 10, 40px header band;
+    // 2x2 grid up to 4 colors, 3-wide grid above) so the tappable areas
+    // are the squares the player actually sees. Keyboard 1–6 still works.
+    mapClick: (px, py, display) => {
+      const colors = (display.colors as number) ?? 4;
+      const padding = 20;
+      const gap = 10;
+      const totalWidth = 400 - padding * 2;
+      const totalHeight = 400 - padding * 2 - 40;
+      const cols = colors <= 4 ? 2 : 3;
+      const rows = colors <= 4 ? 2 : Math.ceil(colors / 3);
+      const cellW = (totalWidth - gap * (cols - 1)) / cols;
+      const cellH = (totalHeight - gap * (rows - 1)) / rows;
+      const size = Math.min(cellW, cellH);
+      for (let i = 0; i < colors; i++) {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const x = padding + col * (size + gap);
+        const y = padding + 40 + row * (size + gap);
+        if (px >= x && px <= x + size && py >= y && py <= y + size) {
+          return { type: 'tap', data: { button: i } };
+        }
+      }
+      return null;
+    },
     load: async () => {
       const m = await import('@/gamesdk/games/simon-pro/index.js');
       const r = await import('@/gamesdk/games/simon-pro/renderer.js');
