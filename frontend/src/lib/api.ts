@@ -144,21 +144,18 @@ class ApiClient {
 
   // Jackpot
   async getJackpot(): Promise<JackpotState> {
-    // Backend speaks snake_case, and current_amount is in micro-USDC —
-    // convert here so the UI only ever sees whole USDC.
-    const raw = await this.request<{
-      current_amount: number;
-      tier: JackpotState['tier'];
-      vault_address: string;
-      players_online: number;
-      today_plays: number;
-    }>('/api/v1/live');
+    // request() already camelizes the backend's snake_case response — only
+    // the unit conversion is left to do here: current_amount arrives in
+    // micro-USDC and the UI only ever sees whole USDC. (This method used
+    // to read raw.current_amount / raw.today_plays etc. off the
+    // already-camelized object — every field came back undefined and the
+    // homepage crashed on todayPlays.toLocaleString() during hydration.)
+    const raw = await this.request<JackpotState>('/api/v1/live');
     return {
-      currentAmount: raw.current_amount / 1_000_000,
-      tier: raw.tier,
-      vaultAddress: raw.vault_address,
-      playersOnline: raw.players_online,
-      todayPlays: raw.today_plays,
+      ...raw,
+      currentAmount: (raw.currentAmount ?? 0) / 1_000_000,
+      playersOnline: raw.playersOnline ?? 0,
+      todayPlays: raw.todayPlays ?? 0,
     };
   }
 
