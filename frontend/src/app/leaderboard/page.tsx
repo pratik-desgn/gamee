@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useWallet } from '@solana/wallet-adapter-react';
 import { apiClient } from '@/lib/api';
 import type { LeaderboardEntry } from '@/types';
 import Link from 'next/link';
@@ -8,6 +9,8 @@ import Link from 'next/link';
 type Scope = 'daily' | 'weekly' | 'monthly' | 'alltime';
 
 export default function LeaderboardPage() {
+  const { publicKey } = useWallet();
+  const myWallet = publicKey?.toBase58();
   const [scope, setScope] = useState<Scope>('alltime');
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -91,7 +94,9 @@ export default function LeaderboardPage() {
                     <tr
                       key={entry.rank}
                       className={`border-b border-gamee-border/50 hover:bg-white/[0.02] transition-colors ${
-                        entry.rank <= 3 ? 'bg-gradient-to-r from-yellow-500/5 via-transparent to-transparent' : ''
+                        entry.wallet === myWallet
+                          ? 'bg-purple-500/10'
+                          : entry.rank <= 3 ? 'bg-gradient-to-r from-yellow-500/5 via-transparent to-transparent' : ''
                       }`}
                     >
                       <td className="p-4">
@@ -105,6 +110,9 @@ export default function LeaderboardPage() {
                       </td>
                       <td className="p-4">
                         <span className="font-mono text-sm">{entry.wallet.slice(0, 8)}...{entry.wallet.slice(-4)}</span>
+                        {entry.wallet === myWallet && (
+                          <span className="ml-2 px-2 py-0.5 rounded-full bg-purple-500/20 border border-purple-500/40 text-purple-300 text-[10px] font-bold align-middle">YOU</span>
+                        )}
                       </td>
                       <td className="p-4 text-right text-gamee-muted tabular-nums">{entry.gamesPlayed}</td>
                       <td className="p-4 text-right font-bold text-purple-400 tabular-nums">{entry.wins}</td>

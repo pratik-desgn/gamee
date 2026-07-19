@@ -5,6 +5,15 @@ import { useWallet } from '@solana/wallet-adapter-react';
 import Link from 'next/link';
 import type { GameSession, Ticket } from '@/types';
 import { apiClient } from '@/lib/api';
+import { GAME_GUIDES } from '@/lib/gameGuides';
+
+const RESULT_BADGE: Record<string, { emoji: string; label: string; cls: string }> = {
+  won: { emoji: '🎉', label: 'won', cls: 'text-green-400' },
+  lost: { emoji: '😢', label: 'lost', cls: 'text-red-400' },
+  rejected: { emoji: '🚫', label: 'rejected', cls: 'text-yellow-400' },
+  review_hold: { emoji: '🔎', label: 'under review', cls: 'text-amber-400' },
+  pending: { emoji: '⏳', label: 'pending', cls: 'text-gamee-muted' },
+};
 
 export default function ProfilePage() {
   const { publicKey, connected } = useWallet();
@@ -46,8 +55,8 @@ export default function ProfilePage() {
         {/* Stats Row */}
         <div className="grid grid-cols-3 gap-3 sm:gap-4 mb-8">
           <div className="glass rounded-xl p-4 text-center">
-            <div className="text-2xl font-bold gradient-text tabular-nums">{tickets.length}</div>
-            <div className="text-xs text-gamee-muted uppercase tracking-wider mt-1">Tickets</div>
+            <div className="text-2xl font-bold gradient-text tabular-nums">{tickets.filter((t) => t.status === 'unused').length}</div>
+            <div className="text-xs text-gamee-muted uppercase tracking-wider mt-1">Tickets Left</div>
           </div>
           <div className="glass rounded-xl p-4 text-center">
             <div className="text-2xl font-bold gradient-text tabular-nums">{sessions.length}</div>
@@ -101,26 +110,29 @@ export default function ProfilePage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {sessions.map((s) => (
-                      <tr key={s.id} className="border-b border-gamee-border/50 hover:bg-white/[0.02] transition-colors">
-                        <td className="p-4">{s.gameId}</td>
-                        <td className="p-4">
-                          <span className={`inline-flex items-center gap-1.5 font-semibold ${
-                            s.result === 'won' ? 'text-green-400' :
-                            s.result === 'lost' ? 'text-red-400' :
-                            s.result === 'rejected' ? 'text-yellow-400' : 'text-gamee-muted'
-                          }`}>
-                            {s.result === 'won' && '🎉'}
-                            {s.result === 'lost' && '😢'}
-                            {s.result === 'rejected' && '🚫'}
-                            {s.result === 'pending' && '⏳'}
-                            {s.result}
-                          </span>
-                        </td>
-                        <td className="p-4 text-gamee-muted tabular-nums">{s.finalScore || '-'}</td>
-                        <td className="p-4 text-gamee-muted text-sm">{new Date(s.startedAt).toLocaleDateString()}</td>
-                      </tr>
-                    ))}
+                    {sessions.map((s) => {
+                      const guide = GAME_GUIDES[s.gameId];
+                      const badge = RESULT_BADGE[s.result] ?? RESULT_BADGE.pending;
+                      return (
+                        <tr key={s.id} className="border-b border-gamee-border/50 hover:bg-white/[0.02] transition-colors">
+                          <td className="p-4">
+                            <Link href={`/result/${s.id}`} className="hover:text-purple-400 transition-colors">
+                              {guide ? `${guide.icon} ${guide.name}` : s.gameId}
+                            </Link>
+                          </td>
+                          <td className="p-4">
+                            <span className={`inline-flex items-center gap-1.5 font-semibold ${badge.cls}`}>
+                              {badge.emoji} {badge.label}
+                            </span>
+                          </td>
+                          <td className="p-4 text-gamee-muted tabular-nums">
+                            {s.finalScore ?? '-'}
+                            {typeof s.targetScore === 'number' && <span className="text-xs"> / {s.targetScore}</span>}
+                          </td>
+                          <td className="p-4 text-gamee-muted text-sm">{new Date(s.startedAt).toLocaleDateString()}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

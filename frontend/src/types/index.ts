@@ -24,7 +24,7 @@ export interface GameSession {
   };
   targetScore: number;
   startedAt: string;
-  result: 'pending' | 'won' | 'lost' | 'rejected';
+  result: 'pending' | 'won' | 'lost' | 'rejected' | 'review_hold';
   finalScore?: number;
 }
 

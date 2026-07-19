@@ -13,7 +13,7 @@ const LAND_MS = 4200;      // final decisive ease-out onto the assigned game
 const REVEAL_PAUSE_MS = 2600; // linger on the result before entering the game
 
 export default function SpinPage() {
-  const { publicKey } = useWallet();
+  const { publicKey, connected } = useWallet();
   const router = useRouter();
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [selectedTicket, setSelectedTicket] = useState<string | null>(null);
@@ -35,6 +35,9 @@ export default function SpinPage() {
     if (!publicKey) return;
     apiClient.getMyTickets('unused').then((res) => {
       setTickets(res.tickets);
+      // One ticket is the overwhelmingly common case — pre-select it so
+      // the page is one tap ("SPIN") instead of two.
+      if (res.tickets.length === 1) setSelectedTicket(res.tickets[0].id);
     }).catch(() => {});
   }, [publicKey]);
 
@@ -128,7 +131,12 @@ export default function SpinPage() {
 
         {phase === 'pick' && (
           <>
-            {tickets.length === 0 ? (
+            {!connected ? (
+              <div className="text-center space-y-3 py-2">
+                <p className="text-gamee-muted">🔌 Connect your wallet to spin.</p>
+                <p className="text-sm text-gamee-muted">Use the wallet button in the top-right corner.</p>
+              </div>
+            ) : tickets.length === 0 ? (
               <div className="text-center space-y-4 py-2">
                 <p className="text-gamee-muted">🎟️ You don&apos;t have any unused tickets.</p>
                 <Link
