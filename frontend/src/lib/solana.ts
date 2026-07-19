@@ -49,6 +49,17 @@ export function getConnection(): Connection {
   return new Connection(rpc);
 }
 
+/**
+ * Solana Explorer link for a transaction signature. The cluster suffix is
+ * derived from the RPC in use so payout links keep working if the app is
+ * ever pointed at mainnet.
+ */
+export function explorerTxUrl(signature: string): string {
+  const rpc = process.env.NEXT_PUBLIC_SOLANA_RPC || 'https://api.devnet.solana.com';
+  const cluster = rpc.includes('devnet') ? '?cluster=devnet' : rpc.includes('testnet') ? '?cluster=testnet' : '';
+  return `https://explorer.solana.com/tx/${signature}${cluster}`;
+}
+
 /** Encode a u64 as 8 little-endian bytes. */
 function u64le(value: bigint): Buffer {
   const buf = Buffer.alloc(8);

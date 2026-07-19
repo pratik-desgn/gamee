@@ -48,9 +48,12 @@ export interface SpinResult {
 
 export interface GameResult {
   sessionId: string;
-  verdict: 'pending' | 'won' | 'lost' | 'rejected';
+  verdict: 'pending' | 'won' | 'lost' | 'rejected' | 'review_hold';
   score?: number;
   payoutTx?: string;
+  gameId?: string;
+  targetScore?: number;
+  tier?: string;
 }
 
 export interface LeaderboardEntry {

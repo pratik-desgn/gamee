@@ -184,10 +184,13 @@ func (s *Service) RegisterRoutes(rg *gin.RouterGroup) {
 
 // ResultResponse is the response for GET /api/v1/session/:id/result.
 type ResultResponse struct {
-	SessionID string  `json:"session_id"`
-	Verdict   string  `json:"verdict"` // "pending" | "won" | "lost" | "rejected"
-	Score     *int    `json:"score,omitempty"`
-	PayoutTx  *string `json:"payout_tx,omitempty"`
+	SessionID   string  `json:"session_id"`
+	Verdict     string  `json:"verdict"` // "pending" | "won" | "lost" | "rejected" | "review_hold"
+	Score       *int    `json:"score,omitempty"`
+	PayoutTx    *string `json:"payout_tx,omitempty"`
+	GameID      string  `json:"game_id"`
+	TargetScore *int    `json:"target_score,omitempty"`
+	Tier        string  `json:"tier"`
 }
 
 // HandleResult handles GET /api/v1/session/:id/result. The real, verified
@@ -198,13 +201,13 @@ func (s *Service) HandleResult(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	userIDStr, _ := userID.(string)
 
-	var ownerID, result string
-	var finalScore *int
+	var ownerID, result, gameID, tier string
+	var finalScore, targetScore *int
 	var payoutTx *string
 	err := s.db.QueryRow(c.Request.Context(),
-		`SELECT user_id, result, final_score, payout_tx FROM game_sessions WHERE id = $1::uuid`,
+		`SELECT user_id, result, final_score, payout_tx, game_id, target_score, tier FROM game_sessions WHERE id = $1::uuid`,
 		sessionID,
-	).Scan(&ownerID, &result, &finalScore, &payoutTx)
+	).Scan(&ownerID, &result, &finalScore, &payoutTx, &gameID, &targetScore, &tier)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "session not found", "code": "SESSION_NOT_FOUND"})
 		return
@@ -215,10 +218,13 @@ func (s *Service) HandleResult(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, ResultResponse{
-		SessionID: sessionID,
-		Verdict:   result,
-		Score:     finalScore,
-		PayoutTx:  payoutTx,
+		SessionID:   sessionID,
+		Verdict:     result,
+		Score:       finalScore,
+		PayoutTx:    payoutTx,
+		GameID:      gameID,
+		TargetScore: targetScore,
+		Tier:        tier,
 	})
 }
 
