@@ -84,6 +84,10 @@ func main() {
 	// Large payouts are held for staff approval instead of auto-settling.
 	reviewSvc := payoutreview.NewService(pgPool, cfg.LargePayoutReviewThreshold)
 
+	// Auto-clear held payouts whose trust signals are all clean; only
+	// suspicious (or very large) wins wait for a human.
+	go payoutreview.NewAutoReviewer(reviewSvc, cfg.AutoReviewMaxPayout).Start(ctx)
+
 	// Initialize settlement worker (watches for winning verdicts).
 	settlementSvc := settlement.NewService(pgPool, rdb, cfg.SolanaRPCURL, cfg.ProgramID, cfg.USDTMint, cfg.VerifierKeyPath, cfg.VerifierCosignerKeyPaths, reviewSvc)
 	go settlementSvc.Start(ctx)

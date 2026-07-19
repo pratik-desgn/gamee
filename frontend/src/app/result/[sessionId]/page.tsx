@@ -85,9 +85,9 @@ export default function ResultPage() {
             </h1>
             {verdict === 'review_hold' && (
               <p className="text-sm text-gamee-muted leading-relaxed">
-                You hit the target! Big payouts get a quick human look before
-                settling — no action needed. This page updates on its own once
-                the review clears.
+                You hit the target! Big payouts get a quick safety check before
+                settling — it usually clears automatically within a minute. No
+                action needed; this page updates on its own.
               </p>
             )}
             {verdict === 'rejected' && (

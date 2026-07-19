@@ -99,6 +99,7 @@ type Config struct {
 	// Admin / payout review
 	AdminAPIKey                string
 	LargePayoutReviewThreshold int64
+	AutoReviewMaxPayout        int64
 
 	// Environment
 	Environment string
@@ -163,6 +164,10 @@ func Load() *Config {
 		// payout at or above this size is held for staff approval.
 		AdminAPIKey:                getEnv("ADMIN_API_KEY", ""),
 		LargePayoutReviewThreshold: getEnvInt64("LARGE_PAYOUT_REVIEW_THRESHOLD", 1_000_000_000),
+		// Held payouts with clean trust signals are auto-approved below
+		// this cap (10,000 USDC); at/above it — or set <= 0 to disable
+		// auto-review entirely — a human must approve via /admin.
+		AutoReviewMaxPayout: getEnvInt64("AUTO_REVIEW_MAX_PAYOUT", 10_000_000_000),
 		Environment:                getEnv("ENVIRONMENT", "development"),
 	}
 }
