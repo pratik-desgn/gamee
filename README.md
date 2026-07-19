@@ -7,7 +7,7 @@
 | | |
 |---|---|
 | 🌐 **Live demo (devnet beta)** | https://edith.tail5956ca.ts.net |
-| 🎥 **Demo video (3 min)** | _[link coming — YouTube/Loom]_ |
+| 🎥 **Demo video** | https://youtu.be/fz8vY7Q9VZM |
 | ⛓️ **Program (Solana devnet)** | [`9ZjYdP5QQB6SHbQWRocLDtuxga519Z4ZQsVct1ESkJYa`](https://explorer.solana.com/address/9ZjYdP5QQB6SHbQWRocLDtuxga519Z4ZQsVct1ESkJYa?cluster=devnet) |
 | 🧑‍💻 **Team** | Pratik Dulal (solo) |
 
@@ -53,7 +53,7 @@ Prize gaming dies the moment one bot wins. GAMEE's answer is **deterministic rep
 3. **The server replays the whole game.** After the session, a verification worker pool spawns the same game code in Node.js (`games/sdk/run.js`) and re-simulates every tick from the recorded inputs. The replayed score is the *only* score that exists. A mismatch = automatic rejection.
 4. **Behavioral heuristics catch what replay can't.** Replay proves the inputs produce the score — heuristics ask whether a *human* produced the inputs: input-rate ceilings, inter-input timing entropy (bots are too regular), and reaction-time floors.
 5. **A graduated action ladder** (flag → shadow-review → reject → ban, ban gated behind an ops flag) means false positives degrade gracefully instead of nuking real players.
-6. **A cosigner attests settlement.** Wins are settled on-chain by a verifier authority that only signs after replay verification passes; payouts above a configurable threshold are additionally held for manual review.
+6. **A cosigner attests settlement.** Wins are settled on-chain by a verifier authority that only signs after replay verification passes. Payouts above a configurable threshold get an extra screening pass: an auto-reviewer clears them in under a minute when every trust signal is clean (unbanned wallet, zero cheat flags on the session and in the wallet's history), and queues anything suspicious for a human with the reasons written out.
 
 Every new game plugs into the same SDK and inherits all of this for free — that's the moat.
 
@@ -127,8 +127,9 @@ Browser (Next.js 15 + wallet adapter)          Solana (Anchor 0.30)
 - ✅ Anchor program deployed to devnet: ticket purchase with on-chain fee split, cosigned spin commit, verified settlement with inline 95/5 payout
 - ✅ 10 playable deterministic arcade games with a shared SDK
 - ✅ Full anti-cheat pipeline: input streaming → server-side deterministic replay → cosigned settlement, plus behavioral heuristics with a graduated action ladder
-- ✅ Jackpot tier ladder, public leaderboard, difficulty calibration, large-payout review queue
+- ✅ Jackpot tier ladder, public leaderboard, difficulty calibration, large-payout review queue with auto-clearing for clean wins
 - ✅ Next.js frontend: wallet sign-in, live jackpot, spin wheel, gameplay, result flow — mobile/touch friendly
+- ✅ Self-playing demo mode: every game can play itself, so new players watch the mechanic before spending a ticket
 - ✅ Devnet faucet for test USDC — anyone can run the whole loop from the live demo
 - ✅ CI, devnet e2e script, one-command local beta stack
 
