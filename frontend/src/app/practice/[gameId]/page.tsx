@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { GAME_REGISTRY } from '@/lib/gameRegistry';
 import { GAME_GUIDES } from '@/lib/gameGuides';
+import { startDemo } from '@/lib/demoBots';
 import { useGameCanvasInput } from '@/lib/useGameCanvasInput';
 import type { TimestampedInput } from '@/types';
 import type { JackpotGame } from '@/gamesdk/sdk/interface';
@@ -46,6 +47,9 @@ export default function PracticePage() {
   const [targetScore, setTargetScore] = useState(0);
   const [won, setWon] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Self-playing demo (lib/demoBots.ts) on the idle screen.
+  const [demoActive, setDemoActive] = useState(false);
+  const stopDemoRef = useRef<(() => void) | null>(null);
 
   const loop = useCallback(() => {
     const game = gameRef.current;
@@ -74,8 +78,27 @@ export default function PracticePage() {
     rafRef.current = requestAnimationFrame(loop);
   }, []);
 
+  const stopDemoMode = useCallback(() => {
+    stopDemoRef.current?.();
+    stopDemoRef.current = null;
+    setDemoActive(false);
+  }, []);
+
+  const startDemoMode = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!entry || !canvas) return;
+    canvas.width = entry.width;
+    canvas.height = entry.height;
+    stopDemoRef.current?.();
+    stopDemoRef.current = startDemo(entry, canvas, level);
+    setDemoActive(true);
+  }, [entry, level]);
+
+  useEffect(() => () => stopDemoRef.current?.(), []);
+
   const start = useCallback(() => {
     if (!entry) return;
+    stopDemoMode();
     setLoadError(null);
 
     const canvas = canvasRef.current;
@@ -109,7 +132,7 @@ export default function PracticePage() {
       setLoadError(err instanceof Error ? err.message : `Failed to load "${gameId}"`);
       setStatus('idle');
     });
-  }, [entry, gameId, level, loop]);
+  }, [entry, gameId, level, loop, stopDemoMode]);
 
   useEffect(() => {
     return () => cancelAnimationFrame(rafRef.current);
@@ -172,7 +195,7 @@ export default function PracticePage() {
           </div>
         </div>
 
-        {status === 'idle' && (
+        {status === 'idle' && !demoActive && (
           <div className="text-center py-4 space-y-4 shrink-0 overflow-y-auto">
             <h1 className="text-xl font-bold">
               {guide ? `${guide.icon} ${guide.name}` : gameId.replace(/-/g, ' ')}
@@ -180,11 +203,22 @@ export default function PracticePage() {
             {guide && (
               <div className="max-w-md mx-auto space-y-2 text-left">
                 <p className="text-sm text-gamee-muted leading-relaxed">{guide.goal}</p>
-                <div className="text-xs text-gamee-muted space-y-1 bg-white/5 border border-gamee-border rounded-lg p-3">
-                  <div className="hidden sm:block">🖥️ {guide.controls.desktop}</div>
-                  <div className="sm:hidden">📱 {guide.controls.mobile}</div>
-                  {guide.tip && <div className="pt-1 border-t border-gamee-border/60">💡 {guide.tip}</div>}
+                <ol className="text-xs text-gamee-muted space-y-1.5 bg-white/5 border border-gamee-border rounded-lg p-3 list-decimal list-inside leading-relaxed">
+                  {guide.steps.map((s) => <li key={s}>{s}</li>)}
+                </ol>
+                <div className="text-xs space-y-1 bg-white/5 border border-gamee-border rounded-lg p-3 leading-relaxed">
+                  <div className="text-gamee-muted">
+                    <span className="hidden sm:inline">🖥️ {guide.controls.desktop}</span>
+                    <span className="sm:hidden">📱 {guide.controls.mobile}</span>
+                  </div>
+                  {guide.tip && <div className="text-gamee-muted pt-1 border-t border-gamee-border/60">💡 {guide.tip}</div>}
                 </div>
+                <button
+                  onClick={startDemoMode}
+                  className="w-full px-4 py-2.5 rounded-xl border border-gamee-border font-bold text-sm hover:border-cyan-500/50 hover:text-cyan-400 transition-all"
+                >
+                  👀 Watch a demo first
+                </button>
               </div>
             )}
             <div>
@@ -220,10 +254,30 @@ export default function PracticePage() {
           height={entry.height}
           tabIndex={0}
           className={`mx-auto max-w-full w-auto rounded-xl border border-gamee-border bg-[#1a1a2e] cursor-pointer shadow-inner min-h-0 flex-1 object-contain ${
-            status === 'idle' ? 'hidden' : ''
+            status === 'idle' && !demoActive ? 'hidden' : ''
           }`}
           style={{ maxHeight: '52vh', touchAction: 'none' }}
         />
+
+        {status === 'idle' && demoActive && (
+          <div className="flex items-center justify-center gap-3 shrink-0">
+            <span className="px-3 py-1 rounded-full bg-purple-500/80 text-white text-xs font-bold tracking-wide">
+              DEMO — watch how it’s played
+            </span>
+            <button
+              onClick={stopDemoMode}
+              className="px-4 py-1.5 rounded-xl border border-gamee-border text-xs font-bold hover:text-cyan-400 transition-all"
+            >
+              ← Back to instructions
+            </button>
+            <button
+              onClick={start}
+              className="px-4 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-cyan-600 text-white text-xs font-bold transition-all"
+            >
+              ▶ My turn
+            </button>
+          </div>
+        )}
 
         {status === 'finished' && (
           <div className={`p-4 rounded-xl text-center animate-fade-in-up shrink-0 ${won ? 'bg-green-500/10 border border-green-500/30' : 'bg-red-500/10 border border-red-500/30'}`}>

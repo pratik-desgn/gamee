@@ -4,7 +4,8 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { apiClient } from '@/lib/api';
 import { GAME_REGISTRY } from '@/lib/gameRegistry';
-import { GAME_GUIDES, objectiveText } from '@/lib/gameGuides';
+import { GAME_GUIDES, winText } from '@/lib/gameGuides';
+import { startDemo } from '@/lib/demoBots';
 import { useGameCanvasInput } from '@/lib/useGameCanvasInput';
 import type { TimestampedInput } from '@/types';
 import type { JackpotGame } from '@/gamesdk/sdk/interface';
@@ -47,6 +48,10 @@ export default function PlayPage() {
   // when the player dismisses it, so reading the objective costs nothing.
   const [gameState, setGameState] = useState<'connecting' | 'loading' | 'ready' | 'playing' | 'finished'>('connecting');
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Self-playing demo shown from the how-to-play overlay. Runs a
+  // throwaway game instance (lib/demoBots.ts) — never the real session.
+  const [demoActive, setDemoActive] = useState(false);
+  const stopDemoRef = useRef<(() => void) | null>(null);
 
   const finishGame = useCallback(async (finalScore: number) => {
     if (finishedRef.current) return;
@@ -172,11 +177,32 @@ export default function PlayPage() {
     }
   };
 
+  const stopDemoMode = useCallback(() => {
+    stopDemoRef.current?.();
+    stopDemoRef.current = null;
+    setDemoActive(false);
+    // Restore the real session's opening frame on the canvas.
+    const game = gameRef.current;
+    if (game) rendererRef.current?.render(game.getState().display ?? {});
+  }, []);
+
+  const startDemoMode = useCallback(() => {
+    const entry = entryRef.current;
+    const canvas = canvasRef.current;
+    if (!entry || !canvas) return;
+    stopDemoRef.current?.();
+    stopDemoRef.current = startDemo(entry, canvas);
+    setDemoActive(true);
+  }, []);
+
+  useEffect(() => () => stopDemoRef.current?.(), []);
+
   const startPlaying = useCallback(() => {
+    stopDemoMode();
     setGameState('playing');
     lastTickRef.current = performance.now();
     rafRef.current = requestAnimationFrame(loop);
-  }, [loop]);
+  }, [loop, stopDemoMode]);
 
   useEffect(() => {
     return () => cancelAnimationFrame(rafRef.current);
@@ -251,28 +277,65 @@ export default function PlayPage() {
             tabIndex={0}
           />
           {/* How-to-play overlay: game is loaded and rendered behind it;
-              the clock starts only when the player taps Start. */}
-          {gameState === 'ready' && guide && (
-            <div className="absolute inset-0 rounded-xl bg-[#12121f]/90 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
-              <div className="max-w-sm text-center space-y-3">
-                <div className="text-3xl">{guide.icon}</div>
-                <div className="inline-block px-3 py-1 rounded-full bg-cyan-500/15 border border-cyan-500/30 text-xs font-bold text-cyan-300">
-                  🏆 {objectiveText(guide, targetScore)}
+              the clock starts only when the player taps Start. "Watch
+              demo" runs a throwaway self-playing instance on the canvas
+              so the mechanic can be SEEN before it's played. */}
+          {gameState === 'ready' && guide && !demoActive && (
+            <div className="absolute inset-0 rounded-xl bg-[#12121f]/95 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+              <div className="max-w-sm text-left space-y-3">
+                <div className="text-center space-y-2">
+                  <div className="text-3xl">{guide.icon}</div>
+                  <p className="text-sm text-gamee-muted leading-relaxed">{guide.goal}</p>
                 </div>
-                <p className="text-sm text-gamee-muted leading-relaxed">{guide.goal}</p>
-                <div className="text-xs text-gamee-muted space-y-1 text-left bg-white/5 border border-gamee-border rounded-lg p-3">
-                  <div className="hidden sm:block">🖥️ {guide.controls.desktop}</div>
-                  <div className="sm:hidden">📱 {guide.controls.mobile}</div>
-                  {guide.tip && <div className="pt-1 border-t border-gamee-border/60">💡 {guide.tip}</div>}
+                <ol className="text-xs text-gamee-muted space-y-1.5 bg-white/5 border border-gamee-border rounded-lg p-3 list-decimal list-inside leading-relaxed">
+                  {guide.steps.map((s) => <li key={s}>{s}</li>)}
+                </ol>
+                <div className="text-center">
+                  <span className="inline-block px-3 py-1 rounded-full bg-cyan-500/15 border border-cyan-500/30 text-xs font-bold text-cyan-300">
+                    🏆 {winText(guide, targetScore)}
+                  </span>
                 </div>
-                <button
-                  onClick={startPlaying}
-                  className="w-full px-8 py-3 rounded-xl bg-gradient-to-r from-purple-600 to-cyan-600 text-white font-bold shadow-lg shadow-purple-500/20 hover:shadow-purple-500/40 transition-all"
-                >
-                  ▶ Start
-                </button>
+                <div className="text-xs text-gamee-muted bg-white/5 border border-gamee-border rounded-lg p-3 leading-relaxed">
+                  <span className="hidden sm:inline">🖥️ {guide.controls.desktop}</span>
+                  <span className="sm:hidden">📱 {guide.controls.mobile}</span>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={startDemoMode}
+                    className="flex-1 px-4 py-3 rounded-xl border border-gamee-border font-bold text-sm hover:border-cyan-500/50 hover:text-cyan-400 transition-all"
+                  >
+                    👀 Watch demo
+                  </button>
+                  <button
+                    onClick={startPlaying}
+                    className="flex-1 px-4 py-3 rounded-xl bg-gradient-to-r from-purple-600 to-cyan-600 text-white font-bold text-sm shadow-lg shadow-purple-500/20 hover:shadow-purple-500/40 transition-all"
+                  >
+                    ▶ Start
+                  </button>
+                </div>
               </div>
             </div>
+          )}
+          {gameState === 'ready' && demoActive && (
+            <>
+              <div className="absolute top-2 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full bg-purple-500/80 text-white text-xs font-bold tracking-wide pointer-events-none">
+                DEMO — watch how it’s played
+              </div>
+              <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-2">
+                <button
+                  onClick={stopDemoMode}
+                  className="px-4 py-2 rounded-xl bg-black/70 border border-gamee-border text-sm font-bold hover:text-cyan-400 transition-all"
+                >
+                  ← Instructions
+                </button>
+                <button
+                  onClick={startPlaying}
+                  className="px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-cyan-600 text-white text-sm font-bold shadow-lg transition-all"
+                >
+                  ▶ I’m ready
+                </button>
+              </div>
+            </>
           )}
         </div>
 

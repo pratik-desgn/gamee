@@ -1,10 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import JackpotDisplay from '@/components/JackpotDisplay';
 import Wheel from '@/components/Wheel';
 import { GAME_GUIDES } from '@/lib/gameGuides';
+import { GAME_REGISTRY } from '@/lib/gameRegistry';
+import { startDemo } from '@/lib/demoBots';
 
 const GAMES_LIST = [
   { icon: '🐦', name: 'Wing Rush', slug: 'wing-rush', cat: 'Precision' },
@@ -28,6 +30,21 @@ const STEPS = [
 
 export default function HomePage() {
   const [openGame, setOpenGame] = useState<(typeof GAMES_LIST)[number] | null>(null);
+  const demoCanvasRef = useRef<HTMLCanvasElement>(null);
+
+  // Live demo inside the guide modal: the real game plays itself on a
+  // small canvas right after the how-to-play steps — a "demo video" that
+  // can never go stale, because it IS the game (lib/demoBots.ts).
+  useEffect(() => {
+    if (!openGame) return;
+    const entry = GAME_REGISTRY[openGame.slug];
+    const canvas = demoCanvasRef.current;
+    if (!entry || !canvas) return;
+    canvas.width = entry.width;
+    canvas.height = entry.height;
+    const stop = startDemo(entry, canvas);
+    return stop;
+  }, [openGame]);
 
   useEffect(() => {
     if (!openGame) return;
@@ -139,7 +156,7 @@ export default function HomePage() {
             role="dialog"
             aria-modal="true"
             aria-labelledby="game-guide-title"
-            className="glass rounded-2xl p-7 max-w-sm w-full relative animate-fade-in-up max-h-[85dvh] overflow-y-auto"
+            className="glass rounded-2xl p-5 sm:p-6 max-w-sm sm:max-w-2xl w-full relative animate-fade-in-up max-h-[92dvh] flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             <button
@@ -150,35 +167,42 @@ export default function HomePage() {
             >
               ✕
             </button>
-            <div className="text-4xl mb-2">{openGame.icon}</div>
-            <h3 id="game-guide-title" className="text-xl font-bold mb-1">{openGame.name}</h3>
-            <div className="mb-5">
+            <div className="flex items-baseline gap-2 mb-3 shrink-0">
+              <span className="text-2xl">{openGame.icon}</span>
+              <h3 id="game-guide-title" className="text-lg font-bold">{openGame.name}</h3>
               <span className="text-xs text-gamee-muted">{openGame.cat}</span>
             </div>
-            <div className="space-y-4 text-left">
-              <div>
-                <h4 className="text-xs font-bold uppercase tracking-wide text-purple-400 mb-1.5">Goal</h4>
+            {/* Two columns on sm+ (guide left, demo right) so everything is
+                visible at once without scrolling; on phones the demo is
+                height-capped for the same reason. */}
+            <div className="grid sm:grid-cols-2 gap-4 text-left min-h-0">
+              <div className="space-y-3 min-h-0 overflow-y-auto">
                 <p className="text-sm text-gamee-muted leading-relaxed">{GAME_GUIDES[openGame.slug]?.goal}</p>
-              </div>
-              <div>
-                <h4 className="text-xs font-bold uppercase tracking-wide text-cyan-400 mb-1.5">Controls</h4>
-                <ul className="space-y-1">
-                  <li className="text-sm text-gamee-muted leading-relaxed flex gap-2">
-                    <span aria-hidden>🖥️</span>{GAME_GUIDES[openGame.slug]?.controls.desktop}
-                  </li>
-                  <li className="text-sm text-gamee-muted leading-relaxed flex gap-2">
-                    <span aria-hidden>📱</span>{GAME_GUIDES[openGame.slug]?.controls.mobile}
-                  </li>
-                </ul>
-              </div>
-              {GAME_GUIDES[openGame.slug]?.tip && (
-                <div>
-                  <h4 className="text-xs font-bold uppercase tracking-wide text-amber-400 mb-1.5">Tip</h4>
-                  <p className="text-sm text-gamee-muted leading-relaxed">{GAME_GUIDES[openGame.slug]?.tip}</p>
+                <ol className="space-y-1 list-decimal list-inside">
+                  {GAME_GUIDES[openGame.slug]?.steps.map((s) => (
+                    <li key={s} className="text-xs sm:text-sm text-gamee-muted leading-relaxed">{s}</li>
+                  ))}
+                </ol>
+                <div className="text-xs space-y-1 bg-white/5 border border-gamee-border rounded-lg p-2.5 leading-relaxed">
+                  <div className="text-gamee-muted hidden sm:block">🖥️ {GAME_GUIDES[openGame.slug]?.controls.desktop}</div>
+                  <div className="text-gamee-muted sm:hidden">📱 {GAME_GUIDES[openGame.slug]?.controls.mobile}</div>
+                  {GAME_GUIDES[openGame.slug]?.tip && (
+                    <div className="text-gamee-muted pt-1 border-t border-gamee-border/60">💡 {GAME_GUIDES[openGame.slug]?.tip}</div>
+                  )}
                 </div>
-              )}
+              </div>
+              <div className="relative flex items-center justify-center min-h-0">
+                <canvas
+                  ref={demoCanvasRef}
+                  className="max-w-full rounded-lg border border-gamee-border bg-[#1a1a2e] object-contain"
+                  style={{ maxHeight: 'min(38dvh, 340px)', width: 'auto' }}
+                />
+                <span className="absolute top-2 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-purple-500/80 text-white text-[10px] font-bold tracking-wide pointer-events-none">
+                  DEMO
+                </span>
+              </div>
             </div>
-            <div className="mt-6 flex gap-2.5">
+            <div className="mt-4 flex gap-2.5 shrink-0">
               <Link
                 href={`/practice/${openGame.slug}`}
                 className="flex-1 text-center px-4 py-3 rounded-xl border border-gamee-border font-bold text-sm hover:border-cyan-500/50 hover:text-cyan-400 transition-all"

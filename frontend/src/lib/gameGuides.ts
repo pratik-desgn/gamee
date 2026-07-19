@@ -1,20 +1,27 @@
 /**
  * "How to play" copy for every game — the single source for the homepage
  * guide modal, the pre-game overlay on /play, and the /practice idle
- * panel. Goal/controls text is written from the actual win conditions and
- * input handling in each game's own index.ts (and mirrors the exact input
- * semantics in lib/gameRegistry.ts) — not guessed.
+ * panel. Written from the actual win conditions and input handling in
+ * each game's own index.ts (and mirrors the exact input semantics in
+ * lib/gameRegistry.ts) — not guessed.
  *
- * Keyed by game slug (the id every page already has); `name`/`icon` let
- * the play/practice pages render a proper title without re-declaring them.
+ * Structure is deliberately scannable for someone who has never seen the
+ * game: what it is (goal), what to actually do (steps, in order), and
+ * the exact win/lose conditions. Every page also offers a self-playing
+ * demo (lib/demoBots.ts) for players who learn by watching.
+ *
+ * Keyed by game slug (the id every page already has).
  */
 export interface GameGuide {
   name: string;
   icon: string;
+  /** One-line what-is-this. */
   goal: string;
-  /** One sentence naming the concrete win condition, with the live target
-   * number substituted in where the page knows it ("{target}"). */
-  objective: string;
+  /** What to actually do, in order, device-neutral. */
+  steps: string[];
+  /** Exact win condition — "{target}" is replaced with the live number. */
+  win: string;
+  lose: string;
   controls: { desktop: string; mobile: string };
   tip?: string;
 }
@@ -23,117 +30,177 @@ export const GAME_GUIDES: Record<string, GameGuide> = {
   'wing-rush': {
     name: 'Wing Rush',
     icon: '🐦',
-    goal: 'Fly through the gaps between pipes. Touching a pipe, the ground, or the ceiling ends the run.',
-    objective: 'Pass {target} pipes to win.',
+    goal: 'Flappy-bird style: keep the bird airborne and thread it through the pipe gaps.',
+    steps: [
+      'Tap to flap — every tap pushes the bird UP a little; gravity pulls it down between taps.',
+      'Nothing moves until your first tap, so take your time.',
+      'Keep tapping in short bursts to hover, and line the bird up with the gap in each pipe.',
+    ],
+    win: 'Pass {target} pipes.',
+    lose: 'Touch a pipe, the ground, or the ceiling.',
     controls: {
-      desktop: 'Click or press Space to flap upward — gravity does the rest',
-      mobile: 'Tap anywhere on the board to flap upward',
+      desktop: 'Click or press Space to flap',
+      mobile: 'Tap anywhere on the board to flap',
     },
-    tip: 'Short, frequent flaps are easier to control than big rescues.',
+    tip: 'Small frequent taps beat big rescues — aim slightly below the gap center.',
   },
   'dino-sprint': {
     name: 'Dino Sprint',
     icon: '🏃',
-    goal: 'Your dino runs automatically. Jump over every obstacle — hitting one ends the run.',
-    objective: 'Clear {target} obstacles to win.',
+    goal: 'Endless-runner: your dino runs by itself — your only job is jumping over obstacles.',
+    steps: [
+      'Tap to jump. The run starts on your first jump.',
+      'Watch the obstacles sliding in from the right.',
+      'Time each jump so the arc carries you over the obstacle — you can only jump while on the ground.',
+    ],
+    win: 'Clear {target} obstacles.',
+    lose: 'Run into an obstacle.',
     controls: {
-      desktop: 'Click or press Space to jump (only while on the ground)',
+      desktop: 'Click or press Space to jump',
       mobile: 'Tap anywhere on the board to jump',
     },
-    tip: 'Jump late rather than early — the arc carries you further than it looks.',
+    tip: 'Jump a beat later than feels natural — the arc is longer than it looks.',
   },
   'perfect-stack': {
     name: 'Perfect Stack',
     icon: '🔄',
-    goal: 'A block slides back and forth above your tower. Lock it in as precisely as you can — any overhang is sliced off, and the next block starts that much smaller. Miss completely and the game ends.',
-    objective: 'Stack {target} blocks before you run out of width.',
+    goal: 'Tower-stacking: a block slides side to side — drop it exactly on top of the previous one.',
+    steps: [
+      'Watch the block slide back and forth above the tower.',
+      'Tap to lock it in place the moment it lines up with the block below.',
+      'Any part that overhangs gets sliced off — the next block starts that much smaller.',
+    ],
+    win: 'Stack {target} blocks.',
+    lose: 'Miss the tower completely (or shrink the block to nothing).',
     controls: {
-      desktop: 'Click or press Space to lock the moving block',
-      mobile: 'Tap anywhere on the board to lock the moving block',
+      desktop: 'Click or press Space to lock the block',
+      mobile: 'Tap anywhere on the board to lock the block',
     },
-    tip: 'The block speeds up as the tower grows — bank precision early.',
+    tip: 'It speeds up as you go — bank perfect drops early while it’s slow.',
   },
   'reaction-test': {
     name: 'Reaction Test',
     icon: '⏱️',
-    goal: 'Wait for the GO signal, then react as fast as you can. Your average over several rounds is what counts — and jumping the gun costs you.',
-    objective: 'Beat the target average reaction time across all rounds to win.',
+    goal: 'Pure reflexes: tap the instant the screen tells you GO — over several rounds.',
+    steps: [
+      'Wait while the screen shows the "wait" state. Don’t tap yet!',
+      'The moment the GO signal flashes, tap as fast as you can.',
+      'Repeat for every round — your AVERAGE reaction time is what counts.',
+    ],
+    win: 'Beat the target average reaction time across all rounds.',
+    lose: 'Tap too early (false start) or react too slowly on average.',
     controls: {
-      desktop: 'Click or press Space the instant the signal appears',
-      mobile: 'Tap the board the instant the signal appears',
+      desktop: 'Click or press Space on the GO signal',
+      mobile: 'Tap the board on the GO signal',
     },
-    tip: 'Stay relaxed and watch the screen, not the clock.',
+    tip: 'Relax your hand and watch the screen — anticipating hurts more than it helps.',
   },
   'block-merge': {
     name: 'Block Merge',
     icon: '🧩',
-    goal: 'A 2048-style puzzle: every slide moves all tiles at once, and equal tiles that collide merge into one of double the value. Each move also spawns a new tile — run out of moves or space and it’s over.',
-    objective: 'Build a single {target} tile within the move budget to win.',
+    goal: '2048-style: slide ALL tiles at once and merge equal numbers into bigger ones.',
+    steps: [
+      'Swipe (or press an arrow key) — every tile on the board slides that way as far as it can.',
+      'Two tiles with the SAME number that collide merge into one tile of double the value (2+2=4, 4+4=8…).',
+      'Every move spawns one new small tile, and you have a limited number of moves — make each one merge something.',
+    ],
+    win: 'Build a single {target} tile before the moves run out.',
+    lose: 'Run out of moves, or fill the board with no merges left.',
     controls: {
-      desktop: 'Arrow keys to slide all tiles in that direction',
+      desktop: 'Arrow keys to slide',
       mobile: 'Swipe on the board in any direction',
     },
-    tip: 'Keep your biggest tile in a corner and build toward it.',
+    tip: 'Pick a corner, keep your biggest tile there, and mostly alternate two directions.',
   },
   'simon-pro': {
     name: 'Simon Pro',
     icon: '🧠',
-    goal: 'Watch the buttons flash in sequence during WATCH, then repeat the exact order during YOUR TURN. Every round replays the full sequence with one new step added. One wrong button ends the game.',
-    objective: 'Repeat a {target}-step sequence to win.',
+    goal: 'Memory: watch buttons flash in order, then repeat the exact order back.',
+    steps: [
+      'During WATCH, the buttons light up one by one — memorize the order.',
+      'When it says YOUR TURN, tap the buttons in that exact order.',
+      'Each round replays the whole sequence with ONE new step added to the end.',
+    ],
+    win: 'Correctly repeat a {target}-step sequence.',
+    lose: 'Tap one wrong button.',
     controls: {
-      desktop: 'Press the number keys shown on the buttons (1–6), or click them',
-      mobile: 'Tap the buttons in the order they flashed',
+      desktop: 'Click the buttons, or press their number keys (1–6)',
+      mobile: 'Tap the buttons in order',
     },
-    tip: 'Say the sequence in your head as it plays — sound memory beats color memory.',
+    tip: 'Chant the numbers in your head as they flash — rhythm memory beats color memory.',
   },
   'aim-master': {
     name: 'Aim Master',
     icon: '🎯',
-    goal: 'Targets pop up around the field and shrink away fast. Hit them before they vanish — accuracy and speed both matter.',
-    objective: 'Score {target} points before time runs out.',
+    goal: 'Target practice: hit the shrinking targets before they vanish.',
+    steps: [
+      'Targets pop up at random spots and immediately start shrinking.',
+      'Tap each one before it disappears — dead-center hits score more.',
+      'Keep scanning the whole board; several can be alive at once.',
+    ],
+    win: 'Score {target} points before the timer ends.',
+    lose: 'Time runs out below the target score.',
     controls: {
-      desktop: 'Click each target as it appears',
-      mobile: 'Tap each target as it appears',
+      desktop: 'Click the targets',
+      mobile: 'Tap the targets',
     },
-    tip: 'Aim for the center — bigger targets are worth hitting early while they’re large.',
+    tip: 'Hit targets while they’re still big — early hits are worth the most.',
   },
   'sliding-puzzle': {
     name: 'Sliding Puzzle',
     icon: '🧊',
-    goal: 'Slide numbered tiles into the empty slot until they read 1, 2, 3… in order, left to right, top to bottom, with the empty slot ending bottom-right.',
-    objective: 'Solve the puzzle within the move limit to win — "Par" is the benchmark, the move limit is the real deadline.',
+    goal: 'The classic 15-puzzle: slide tiles into the empty slot until the numbers are in order.',
+    steps: [
+      'Only tiles NEXT TO the empty slot can move — tap one and it slides into the gap.',
+      'Shuffle tiles around until they read 1, 2, 3… left-to-right, top-to-bottom.',
+      'The empty slot must end up in the bottom-right corner.',
+    ],
+    win: 'Restore the full order within the move limit ("Par" is a benchmark; the move limit is the real deadline).',
+    lose: 'Use up all the moves before solving it.',
     controls: {
-      desktop: 'Click any tile next to the empty slot to slide it (or arrow keys)',
-      mobile: 'Tap any tile next to the empty slot to slide it',
+      desktop: 'Click a tile next to the empty slot (or arrow keys)',
+      mobile: 'Tap a tile next to the empty slot',
     },
-    tip: 'Solve the top row first, then the left column, and repeat on what remains.',
+    tip: 'Solve the top row first, then the left column — then repeat on the smaller square that remains.',
   },
   'helix-drop': {
     name: 'Helix Drop',
     icon: '🌀',
-    goal: 'A ball rests on a rotating tower. Spin the tower so the gap comes under the ball and it falls through to the next platform — but never sweep the red danger zone under it.',
-    objective: 'Fall through {target} platforms to win.',
+    goal: 'A ball sits on a spinning tower — rotate the floor’s gap under it so it falls to the next level.',
+    steps: [
+      'The ball never moves sideways — YOU rotate the tower under it.',
+      'Hold left or right to spin the platform. When its gap comes under the ball, the ball drops through — that’s a point.',
+      'The RED zone next to the gap is deadly: rotate the direction that brings the GAP first, never the red.',
+    ],
+    win: 'Drop through {target} platforms.',
+    lose: 'Let the red zone slide (or the ball land) under the ball.',
     controls: {
-      desktop: 'Hold ← / → arrow keys to rotate the tower',
-      mobile: 'Touch and hold the left or right half of the board to rotate',
+      desktop: 'Hold ← / → arrow keys to rotate',
+      mobile: 'Touch and HOLD the left or right half of the board',
     },
-    tip: 'Approach the gap from the side away from the red zone — one direction is always safe.',
+    tip: 'Before each drop, look at which side of the gap is red — approach from the clean side.',
   },
   minefield: {
     name: 'Minefield',
     icon: '💣',
-    goal: 'Reveal tiles one by one. Each number tells you how many mines touch that tile. Hit a mine and it’s over.',
-    objective: 'Reveal every safe tile without detonating a mine.',
+    goal: 'Minesweeper: reveal all the safe tiles, never a mine.',
+    steps: [
+      'Tap any tile to reveal it.',
+      'A revealed number tells you how many mines touch that tile (diagonals count).',
+      'Use the numbers to deduce which neighbors are safe, and keep revealing.',
+    ],
+    win: 'Reveal every safe tile.',
+    lose: 'Reveal a mine.',
     controls: {
       desktop: 'Click a tile to reveal it',
       mobile: 'Tap a tile to reveal it',
     },
-    tip: 'Start from tiles adjacent to low numbers — a "1" with one flagged neighbor makes every other neighbor safe.',
+    tip: 'A "0" clears its whole neighborhood — start wide, then work the edges of the numbers.',
   },
 };
 
-/** Fills the live target number into a guide's objective line. */
-export function objectiveText(guide: GameGuide, target: number | null | undefined): string {
-  if (target == null || target === 0) return guide.objective.replace('{target}', '…');
-  return guide.objective.replace('{target}', String(target));
+/** Fills the live target number into a guide's win line. */
+export function winText(guide: GameGuide, target: number | null | undefined): string {
+  if (target == null || target === 0) return guide.win.replace('{target}', '…');
+  return guide.win.replace('{target}', String(target));
 }
